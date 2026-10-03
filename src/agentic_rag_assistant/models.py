@@ -1,6 +1,8 @@
 """Document data shared by the ingestion service and HTTP response."""
 
 from dataclasses import dataclass, field
+from datetime import datetime
+from uuid import UUID
 
 
 @dataclass(frozen=True)
@@ -73,3 +75,18 @@ class AnswerResponse:
     answered: bool
     citations: list[SourceCitation]
     tool_results: list[ToolResult] = field(default_factory=list)
+    conversation_id: UUID | None = None
+
+
+@dataclass(frozen=True)
+class ConversationTurn:
+    turn_number: int
+    response: AnswerResponse
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class ConversationHistory:
+    conversation_id: UUID
+    turn_count: int
+    turns: list[ConversationTurn]

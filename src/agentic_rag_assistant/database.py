@@ -1,4 +1,4 @@
-"""Explicit initialization for the first PostgreSQL/pgvector schema."""
+"""Explicit initialization of vector storage and conversation tables."""
 
 from importlib.resources import files
 
@@ -56,4 +56,4 @@ if __name__ == "__main__":
             "Database initialization failed. Check DATABASE_URL, database readiness, "
             "and the existing index configuration."
         ) from None
-    print("PostgreSQL vector schema initialized.")
+    print("PostgreSQL vector and conversation schemas initialized.")

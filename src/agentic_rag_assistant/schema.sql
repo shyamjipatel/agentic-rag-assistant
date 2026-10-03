@@ -27,3 +27,17 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     embedding vector(384) NOT NULL,
     UNIQUE (document_id, chunk_index)
 );
+
+CREATE TABLE IF NOT EXISTS conversations (
+    conversation_id uuid PRIMARY KEY,
+    turn_count integer NOT NULL DEFAULT 0 CHECK (turn_count >= 0),
+    created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS conversation_turns (
+    conversation_id uuid NOT NULL REFERENCES conversations(conversation_id) ON DELETE CASCADE,
+    turn_number integer NOT NULL CHECK (turn_number > 0),
+    response jsonb NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (conversation_id, turn_number)
+);

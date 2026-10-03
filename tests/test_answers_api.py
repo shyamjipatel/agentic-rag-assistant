@@ -104,7 +104,7 @@ def test_no_retrieved_evidence_returns_abstention_without_a_model_call(answer_cl
     assert response.status_code == 200
     assert response.json() == {
         "question": "Question?", "answer": INSUFFICIENT_EVIDENCE,
-        "answered": False, "citations": [], "tool_results": [],
+        "answered": False, "citations": [], "tool_results": [], "conversation_id": None,
     }
     assert provider.calls == []
 
