@@ -1,63 +1,15 @@
-# Python bytecode and build artifacts
+# Project virtual environment
+.venv/
+
+# Python bytecode
 __pycache__/
 *.py[cod]
-build/
-dist/
-*.egg-info/
-.eggs/
 
-# Virtual environments
-.venv/
-venv/
-env/
-ENV/
+# Pytest cache
+.pytest_cache/
 
-# Local environment variables (keep shareable examples)
+# Local environment configuration
 .env
 .env.*
 !.env.example
 !.env.*.example
-.envrc
-.pypirc
-
-# Test, coverage, and analysis caches
-.pytest_cache/
-.coverage
-.coverage.*
-coverage.xml
-htmlcov/
-.hypothesis/
-.tox/
-.nox/
-.ruff_cache/
-.mypy_cache/
-.cache/
-
-# Runtime logs and local RAG/database storage
-*.log
-/logs/
-/uploads/
-/data/uploads/
-/data/chroma/
-/data/qdrant/
-/data/postgres/
-/*.db
-/*.db-*
-/*.sqlite
-/*.sqlite-*
-/*.sqlite3
-/*.sqlite3-*
-
-# Local editor and notebook state
-.idea/
-.vscode/
-.ipynb_checkpoints/
-*.swp
-*.swo
-
-# Operating system files
-.DS_Store
-Thumbs.db
-
-# Keep Python version files, dependency locks, test fixtures,
-# example documents, architecture diagrams, and demo screenshots tracked.
