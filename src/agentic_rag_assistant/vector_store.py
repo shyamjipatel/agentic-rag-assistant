@@ -1,5 +1,7 @@
 """Transactional document storage and exact cosine search using pgvector."""
 
+from functools import lru_cache
+
 import psycopg
 from pgvector import Vector
 from pgvector.psycopg import register_vector
@@ -11,12 +13,38 @@ from agentic_rag_assistant.database import (
     connect,
 )
 from agentic_rag_assistant.embeddings import validate_vector
-from agentic_rag_assistant.models import DocumentChunk, IngestedDocument, SearchHit
+from agentic_rag_assistant.models import (
+    DocumentChunk, DocumentList, DocumentSummary, IngestedDocument, SearchHit,
+)
+from agentic_rag_assistant.settings import get_settings
 
 
 class PostgresVectorStore:
     def __init__(self, database_url: str):
         self.database_url = database_url
+
+    def list_documents(self, *, limit: int = 50, offset: int = 0) -> DocumentList:
+        if not 1 <= limit <= 100 or offset < 0:
+            raise ValueError("Invalid document pagination.")
+        try:
+            with connect(self.database_url) as connection:
+                check_configuration(connection)
+                rows = connection.execute(
+                    """SELECT totals.total, page.* FROM
+                    (SELECT count(*) AS total FROM documents) totals
+                    LEFT JOIN LATERAL (
+                        SELECT d.document_id, d.filename, d.character_count, d.page_count,
+                            (SELECT count(*) FROM document_chunks c
+                             WHERE c.document_id = d.document_id) AS chunk_count, d.indexed_at
+                        FROM documents d ORDER BY d.indexed_at DESC, d.document_id DESC
+                        LIMIT %s OFFSET %s
+                    ) page ON TRUE""", (limit, offset),
+                ).fetchall()
+            return DocumentList(
+                [DocumentSummary(*row[1:]) for row in rows if row[1] is not None], rows[0][0],
+            )
+        except psycopg.Error as exc:
+            raise StorageUnavailableError("The document library could not be loaded.") from exc
 
     def save_document(self, document: IngestedDocument, vectors: list[list[float]]) -> None:
         if len(vectors) != len(document.chunks):
@@ -100,3 +128,8 @@ class PostgresVectorStore:
             raise StorageUnavailableError(
                 "Vector search is unavailable. Check database readiness and initialization."
             ) from exc
+
+
+@lru_cache
+def get_vector_store() -> PostgresVectorStore:
+    return PostgresVectorStore(get_settings().database_url.get_secret_value())

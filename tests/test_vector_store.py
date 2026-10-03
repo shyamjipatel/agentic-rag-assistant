@@ -79,6 +79,22 @@ def test_failed_reindex_rolls_back_document_and_chunks(store) -> None:
     assert {hit.chunk.chunk_id for hit in results} == {chunk.chunk_id for chunk in document.chunks}
 
 
+def test_document_library_is_persistent_paginated_and_counts_actual_chunks(store) -> None:
+    first = ingest_document(filename="first.txt", content=b"x" * 1_200)
+    second = ingest_document(filename="second.txt", content=b"Another source")
+    store.save_document(first, [axis_vector(0), axis_vector(1)])
+    store.save_document(second, [axis_vector(0)])
+    reopened = PostgresVectorStore(store.database_url)
+    page = reopened.list_documents(limit=1)
+    assert page.total == 2 and page.documents[0].filename == "second.txt"
+    next_page = reopened.list_documents(limit=1, offset=1)
+    assert next_page.documents[0].filename == "first.txt"
+    assert next_page.documents[0].chunk_count == 2
+    assert next_page.documents[0].character_count == 1_200
+    beyond_end = reopened.list_documents(offset=2)
+    assert beyond_end.total == 2 and beyond_end.documents == []
+
+
 def test_incompatible_model_configuration_is_rejected(store) -> None:
     with connect(store.database_url) as connection:
         connection.execute("UPDATE rag_index_config SET embedding_model = 'incompatible'")

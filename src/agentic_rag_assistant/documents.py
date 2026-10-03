@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
 
 from agentic_rag_assistant.database import StorageUnavailableError
@@ -14,10 +14,24 @@ from agentic_rag_assistant.ingestion import (
     UnsupportedDocumentError,
     ingest_document,
 )
-from agentic_rag_assistant.models import IngestedDocument, IndexedDocument
+from agentic_rag_assistant.models import DocumentList, IngestedDocument, IndexedDocument
 from agentic_rag_assistant.retrieval import RetrievalService, get_retrieval_service
+from agentic_rag_assistant.vector_store import PostgresVectorStore, get_vector_store
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+
+@router.get("", response_model=DocumentList)
+async def list_documents(
+    store: Annotated[PostgresVectorStore, Depends(get_vector_store)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> DocumentList:
+    """Browse the shared library without loading the embedding model."""
+    try:
+        return await run_in_threadpool(store.list_documents, limit=limit, offset=offset)
+    except StorageUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post(

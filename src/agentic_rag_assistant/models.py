@@ -90,3 +90,34 @@ class ConversationHistory:
     conversation_id: UUID
     turn_count: int
     turns: list[ConversationTurn]
+
+
+@dataclass(frozen=True)
+class ConversationSummary:
+    conversation_id: UUID
+    title: str
+    turn_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class ConversationList:
+    conversations: list[ConversationSummary]
+    total: int
+
+
+@dataclass(frozen=True)
+class DocumentSummary:
+    document_id: str
+    filename: str
+    character_count: int
+    page_count: int | None
+    chunk_count: int
+    indexed_at: datetime
+
+
+@dataclass(frozen=True)
+class DocumentList:
+    documents: list[DocumentSummary]
+    total: int

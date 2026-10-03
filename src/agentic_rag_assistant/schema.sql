@@ -41,3 +41,29 @@ CREATE TABLE IF NOT EXISTS conversation_turns (
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (conversation_id, turn_number)
 );
+
+-- Additive upgrades keep existing documents and conversation turns intact.
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'conversations'
+            AND column_name = 'title') THEN
+        ALTER TABLE conversations ADD COLUMN title text NOT NULL DEFAULT 'New conversation'
+            CHECK (length(title) BETWEEN 1 AND 120);
+        UPDATE conversations c SET title = left(t.response->>'question', 120)
+        FROM conversation_turns t
+        WHERE t.conversation_id = c.conversation_id AND t.turn_number = 1
+            AND length(t.response->>'question') > 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'conversations'
+            AND column_name = 'updated_at') THEN
+        ALTER TABLE conversations ADD COLUMN updated_at timestamptz
+            NOT NULL DEFAULT CURRENT_TIMESTAMP;
+        UPDATE conversations c SET updated_at = coalesce(
+            (SELECT max(t.created_at) FROM conversation_turns t
+             WHERE t.conversation_id = c.conversation_id), c.created_at);
+    END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS conversations_recent
+    ON conversations (updated_at DESC, conversation_id DESC);
