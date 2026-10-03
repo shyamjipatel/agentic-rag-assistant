@@ -160,6 +160,142 @@ unmatched filter returns an empty list.
   preparation or a running database. Authentication and user-specific document
   isolation are not implemented; keep this milestone on a trusted local machine.
 
+## Milestone 4: Answers with source citations
+
+`POST /ask` retrieves evidence, asks the configured LLM for a structured answer,
+and resolves source citations against the retrieved chunks. LangGraph, tool
+calling, and conversation memory remain separate future milestones.
+
+The RAG service depends on an `LLMProvider` protocol, not a concrete provider.
+Only the adapter factory selects OpenAI or Ollama:
+
+```text
+POST /ask
+    -> AnswerService -> RetrievalService -> local embeddings + PostgreSQL
+                     -> LLMProvider
+                          -> OpenAIProvider
+                          -> OllamaProvider
+                     -> validate references and attach stored source metadata
+```
+
+### Choose the LLM through configuration
+
+Add one of these configurations to your existing `.env`. The provider and model
+are deliberately unset in `.env.example`; neither is selected automatically.
+
+For OpenAI:
+
+```ini
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-6-luna
+OPENAI_API_KEY=your-api-key
+```
+
+The adapter uses the Responses API with strict JSON-schema output and
+`store=false`. The selected model must support this output format. `gpt-6-luna`
+is a documented model with Structured Outputs support; access depends on your API
+account ([model documentation](https://developers.openai.com/api/docs/models/gpt-6-luna),
+[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)).
+Only the question and retrieved passage text are sent to OpenAI. Keep your real
+key in the ignored `.env`, never in `.env.example` or Git. Calls use paid API
+usage; no calls are made during the automated tests.
+
+For a local Ollama model:
+
+```ini
+LLM_PROVIDER=ollama
+LLM_MODEL=llama3.2:3b
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+```
+
+Install Ollama from <https://ollama.com/download>, start its local service, then
+download the model named in `LLM_MODEL`:
+
+```sh
+ollama pull llama3.2:3b
+```
+
+If you use the standalone CLI, run `ollama serve` in another terminal. The adapter
+calls the local `/api/chat` endpoint with a JSON schema, streaming disabled, and
+an 8,192-token context. Choose a local model that supports that context size and
+structured output. The example [Llama 3.2 model](https://ollama.com/library/llama3.2)
+can be replaced through configuration. Ollama cloud models are outside this
+adapter's scope ([Ollama Structured Outputs](https://docs.ollama.com/capabilities/structured-outputs)).
+
+Restart the API after changing `.env`: settings and service instances are cached
+within each process. Switching the LLM provider or model does **not** change the
+local embedding model or require reindexing documents. These are separate jobs:
+embeddings find passages; the LLM turns those passages into an answer.
+
+Optional settings are `LLM_TIMEOUT_SECONDS` (default 120) and
+`LLM_MAX_OUTPUT_TOKENS` (default 4,096). OpenAI reasoning models use the output
+budget for reasoning as well as answer tokens; increase it if responses are
+incomplete. There are no automatic retries or fallbacks to a different provider.
+
+### Ask a question
+
+Prepare the database and embeddings, index the sample policies from Milestone 3,
+configure a provider, and start the API. Then:
+
+```sh
+curl --fail-with-body http://127.0.0.1:8000/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question": "How many vacation days can staff take each year?", "top_k": 2}'
+```
+
+You can also use **Try it out** at <http://127.0.0.1:8000/docs>. An illustrative
+response, with the long document/chunk details omitted, is:
+
+```json
+{
+  "question": "How many vacation days can staff take each year?",
+  "answer": "Employees receive 24 days of paid annual leave each year. [1]",
+  "answered": true,
+  "citations": [
+    {"source_id": 1, "filename": "leave-policy.txt", "score": 0.736}
+  ]
+}
+```
+
+Each actual citation also includes `document_id` and the complete `chunk` with
+its identifier, text, page number, and character offsets. Source numbers are
+local to the answer. Only cited sources appear in `citations`.
+
+The request accepts a trimmed `question` of 1–2,000 characters, `top_k` of 1–5
+(default 5), optional `document_id`, and optional `min_score` between -1 and 1.
+This smaller evidence limit keeps the initial generation context bounded; the
+existing `/search` endpoint still accepts up to 20 results. Without a score
+threshold, nearest passages may be unrelated, so the model is instructed to
+abstain when the evidence does not answer the question.
+
+If retrieval finds no matching passages, the service returns HTTP 200 with
+`answered=false`, a standard insufficient-evidence message, and empty citations
+without calling the LLM. The model can also abstain when retrieved text is
+unhelpful. Invalid questions or oversized embedding inputs return 422; malformed
+model output, incomplete output, or invalid citations return 502; missing provider
+configuration or unavailable dependencies return 503; LLM HTTP timeouts return
+504. Other endpoints remain usable without configuring an LLM.
+
+### Citation validation and its limits
+
+The model returns short statements with integer source IDs. The backend validates
+the structured answer, rejects unknown IDs and contradictory abstentions, adds
+inline markers such as `[1]`, and copies citation metadata from the retrieved
+records. The model cannot supply a filename or page number in place of that
+stored metadata.
+
+These checks establish that a citation refers to evidence supplied to the model.
+They do not prove that a passage supports every claim, or that a model cannot
+follow malicious instructions in a passage. The prompt treats passages as data
+and asks for evidence-based answers; semantic grounding evaluation and broader
+prompt-injection defenses remain future quality work.
+
+Tests exercise both adapters using HTTPX mock transports, including their actual
+request/response serialization, timeout and refusal handling, and `/ask` citation
+resolution. This does not verify hosted-model access or local-model quality. A
+live answer requires your API credentials or a running Ollama model; neither is
+configured in the initial development environment.
+
 ## Development environment
 
 Use Python 3.13. The initial environment was verified with Python 3.13.7 on macOS
@@ -230,6 +366,13 @@ src/agentic_rag_assistant/
     main.py                 # FastAPI application and health route
     documents.py            # Preview/index routes and upload error mapping
     search.py               # Validated semantic-search HTTP endpoint
+    answers.py              # Ask endpoint and dependency wiring
+    answering.py            # Provider contract, evidence flow, citation validation
+    llm/
+        factory.py          # Selects OpenAI or Ollama from settings
+        common.py           # HTTP transport and structured-output validation
+        openai.py           # OpenAI Responses API adapter
+        ollama.py           # Ollama chat API adapter
     ingestion.py            # Text/PDF parsing and chunk preparation
     chunking.py             # Overlapping text windows with source offsets
     models.py               # Typed document, chunk, and search responses
@@ -249,6 +392,9 @@ tests/
     test_retrieval.py
     test_retrieval_api.py
     test_vector_store.py    # Dedicated-database integration tests
+    test_answering.py
+    test_llm_providers.py
+    test_answers_api.py
 examples/
     knowledge.txt           # Shareable upload example
     leave-policy.txt        # Fictional semantic-search sample
@@ -268,6 +414,8 @@ requirements.lock          # Exact runtime and test dependency versions
   supports the current Starlette/FastAPI test client, and pytest runs the test
   ([Starlette test-client documentation](https://starlette.dev/testclient/)). Test
   tools belong in the `dev` extra rather than runtime dependencies.
+- HTTPX provides runtime HTTP clients for both LLM adapters and mock transports
+  for provider tests. It is a distinct package from the HTTPX2 test-client dependency.
 - `python-multipart` handles file-upload form data; `pypdf` extracts PDF text.
   Plain text parsing and chunking use Python's standard library. FastEmbed runs
   local embeddings, Psycopg connects to PostgreSQL, and pgvector adapts vectors.
