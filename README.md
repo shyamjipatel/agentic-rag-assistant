@@ -173,7 +173,7 @@ unmatched filter returns an empty list.
 `POST /ask` retrieves evidence, asks the configured LLM for a structured answer,
 and resolves source citations against the retrieved chunks. Milestone 5 adds
 LangGraph orchestration, and Milestone 6 adds opt-in calculator tool calling.
-Conversation memory follows later.
+Milestone 7 adds persisted conversations and follow-up question resolution.
 
 The RAG service depends on an `LLMProvider` protocol, not a concrete provider.
 Only the adapter factory selects Ollama, remote Hugging Face, or OpenAI:
@@ -304,7 +304,8 @@ response, with the long document/chunk details omitted, is:
   "citations": [
     {"source_id": 1, "filename": "leave-policy.txt", "score": 0.736}
   ],
-  "tool_results": []
+  "tool_results": [],
+  "conversation_id": null
 }
 ```
 
@@ -315,6 +316,7 @@ local to the answer. Only cited sources appear in `citations`.
 The request accepts a trimmed `question` of 1–2,000 characters, `top_k` of 1–5
 (default 5), optional `document_id`, and optional `min_score` between -1 and 1.
 Milestone 6 adds `use_tools`, a JSON boolean that defaults to `false`.
+Milestone 7 adds an optional `conversation_id` for an existing conversation.
 This smaller evidence limit keeps the initial generation context bounded; the
 existing `/search` endpoint still accepts up to 20 results. Without a score
 threshold, nearest passages may be unrelated, so the model is instructed to
@@ -379,8 +381,9 @@ The implementation in `agent.py` has three LangGraph concepts:
   generation when there are no passages, so that branch makes no LLM request.
 
 The graph compiles once when the cached agent dependency is created. Each `ask`
-invocation starts with fresh state; there is no checkpointer or conversation
-history. Tests cover both graph branches, repeated and concurrent invocations,
+invocation starts with fresh state. Milestone 7 loads bounded committed conversation
+history into that state when requested; there is no graph checkpointer. Tests cover
+both graph branches, repeated and concurrent invocations,
 evidence limits, and failure propagation. Failed nodes propagate their exceptions
 to the existing HTTP boundary; there are no graph retries or provider fallbacks.
 Without tool mode, each invocation performs one retrieval and at most one
@@ -388,7 +391,7 @@ generation request. Milestone 6 adds a separate tool-selection request when enab
 
 This is the orchestration foundation for the agent: its route is currently
 determined by application code. Phase 6 below introduces model-driven tool selection,
-and conversation memory is Phase 7. Introducing them separately keeps each new
+and Phase 7 below introduces persisted conversation history. Introducing them separately keeps each new
 behavior understandable and testable
 ([Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api),
 [Workflows and agents](https://docs.langchain.com/oss/python/langgraph/workflows-agents)).
@@ -481,7 +484,112 @@ grounding evaluation remains future quality work.
 
 Tests exercise decimal arithmetic, native tool/result round trips for all three
 providers, rejected calls, bounded execution, failure mapping, and request
-isolation. Conversation memory is still the next milestone.
+isolation. Milestone 7 below adds conversation memory.
+
+## Milestone 7: Conversation memory
+
+Conversations persist completed question/answer turns in PostgreSQL. Each stored
+turn includes its answer, citation snapshots, calculator results, and timestamp.
+A restarted API can load the same history. Stateless `/ask` requests do not read
+or write conversation storage.
+
+### Set up and try a conversation
+
+Apply the additive tables with the existing database initializer, then restart
+the API. Existing documents, vectors, and embedding configuration are preserved:
+
+```sh
+python -m agentic_rag_assistant.database
+python -m uvicorn agentic_rag_assistant.main:app --reload
+```
+
+In Swagger at <http://127.0.0.1:8000/docs>:
+
+1. Execute `POST /conversations` with no body. It returns HTTP 201 with a generated
+   `conversation_id`, `turn_count: 0`, and `turns: []`.
+2. Copy that ID into `/ask` with a first question such as
+   **How many days of paid annual leave do employees receive each year?**
+3. Reuse the same ID for **And how many days would that be over three years at that rate?**
+   Set `use_tools: true` to enable the calculator.
+
+Replace the placeholder with the ID from step 1:
+
+```json
+{
+  "question": "And how many days would that be over three years at that rate?",
+  "conversation_id": "YOUR_CONVERSATION_ID",
+  "top_k": 2,
+  "use_tools": true
+}
+```
+
+Every `/ask` response now includes `conversation_id`: the supplied ID after a
+successful save, or `null` for a stateless answer. The `question` field preserves
+what the user asked, even when an internal standalone question is used.
+
+- `GET /conversations/{id}?limit=20` returns the latest turns in chronological
+  order and the total `turn_count`. The default is 20; limits range from 1 to 100.
+- `DELETE /conversations/{id}` returns HTTP 204 and deletes that conversation
+  and its turns. It does not delete indexed documents.
+- Unknown IDs return 404, invalid UUIDs return 422, and unavailable conversation
+  storage returns 503. Conversations must be created explicitly before `/ask`.
+
+### How follow-up context works
+
+```mermaid
+flowchart LR
+    Load[Load recent committed turns] --> Context{Any prior turns?}
+    Context -->|Yes| Rewrite[Rewrite as a standalone question]
+    Context -->|No| Retrieve[Retrieve fresh passages]
+    Rewrite --> Retrieve
+    Retrieve --> Answer[Answer, optional calculator, validate citations]
+    Answer --> Save[Atomically save completed turn]
+```
+
+The context step sends only the last three completed turns to the configured
+LLM, capped at 500 characters of each earlier question and 1,000 characters of
+each earlier answer. It asks for a standalone question using the topic and
+references from the conversation. The original question is used on first turns
+and stateless requests, with no rewrite request.
+
+Earlier answers are context, not evidence. Their stored chunks and calculator
+state are not sent into the rewrite request. Retrieval, calculator selection,
+and answer generation use the standalone question and **freshly retrieved
+passages**. Historical citation numbers remain local to their original answers;
+the current answer receives newly resolved citations. Request filters and tool
+mode must be supplied on each request; they are not inherited from earlier turns.
+
+A follow-up adds one LLM request for rewriting. There are at most two LLM requests
+for a conversational answer without tools and three with tools. A valid rewrite
+can still be semantically wrong; the existing citation checks do not establish
+that the model interpreted an ambiguous follow-up correctly. Recent-context
+truncation can also omit information. Summaries and long-term memory are future work.
+
+### Persistence and concurrent requests
+
+The store loads a consistent snapshot of the conversation's revision and recent
+turns, then closes the connection before model calls. Saving compares the loaded
+revision with the current one and atomically increments it with the new turn.
+Two requests based on the same revision cannot both save: the later conflicting
+save returns 409. Read the latest history before retrying; the failed request
+may already have consumed LLM usage. No automatic retries are performed.
+
+Failed generation and failed saves do not append partial turns. An
+insufficient-evidence response is a completed turn and is saved. Deleting a
+conversation while an answer is being generated prevents the later save from
+recreating it. Turn insertion and revision updates roll back together.
+
+This milestone stores completed application turns rather than LangGraph
+checkpoints. It keeps transient retrieval state and provider reasoning out of
+the conversation log; graph replay, resumable execution, and interrupts are
+separate capabilities
+([LangGraph memory](https://docs.langchain.com/oss/python/langgraph/add-memory)).
+PostgreSQL handles the conditional update safely across API processes
+([transaction isolation](https://www.postgresql.org/docs/17/transaction-iso.html)).
+Authentication and per-user ownership remain unimplemented: this is still for
+trusted local use, and possession of a conversation ID is not an authorization
+mechanism. Tests cover persistence, concurrency, deletion, rollback, bounded
+context, current-source citations, and isolation between conversations.
 
 ## Development environment
 
@@ -529,7 +637,7 @@ Run the unit and HTTP contract tests without model downloads or a database:
 python -m pytest
 ```
 
-Four PostgreSQL integration tests are skipped unless `TEST_DATABASE_URL` is set.
+PostgreSQL integration tests are skipped unless `TEST_DATABASE_URL` is set.
 Use a **separate test database**: the tests delete its document rows before and
 after each test and require a database name ending in `_test`. With the default
 local development credentials:
@@ -554,6 +662,10 @@ src/agentic_rag_assistant/
     documents.py            # Preview/index routes and upload error mapping
     search.py               # Validated semantic-search HTTP endpoint
     answers.py              # Ask endpoint and dependency wiring
+    conversations.py        # Create, read, and delete conversation endpoints
+    conversation_service.py # Load history, answer, then save a completed turn
+    conversation_store.py   # PostgreSQL history and optimistic concurrency
+    memory.py               # Bounded context and standalone question rewriting
     agent.py                # LangGraph state, nodes, routing, request isolation
     tools.py                # Calculator schema, validation, decimal execution
     answering.py            # Provider contracts, evidence prompt, citation validation
@@ -571,7 +683,7 @@ src/agentic_rag_assistant/
     retrieval.py            # Coordinates embedding and storage
     vector_store.py         # Atomic indexing and exact cosine search
     database.py             # Connections, initialization, configuration checks
-    schema.sql              # Version 1 PostgreSQL/pgvector schema
+    schema.sql              # Vector index schema and additive conversation tables
     settings.py             # Environment-based configuration
 tests/
     conftest.py             # In-memory PDF test payloads
@@ -587,6 +699,9 @@ tests/
     test_agent.py           # Real graph routing, isolation, and failure boundaries
     test_tools.py           # Decimal arithmetic and invalid calculator inputs
     test_tool_calling.py    # Native tool calling through adapters, graph, and HTTP
+    test_memory.py          # Bounded context and fresh-evidence follow-up behavior
+    test_conversations_api.py
+    test_conversation_store.py # PostgreSQL persistence, concurrency, and rollback
     test_tool_protocol.py   # OpenAI optional function-call status compatibility
     test_llm_providers.py
     test_answers_api.py

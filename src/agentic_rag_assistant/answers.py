@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
@@ -15,6 +16,11 @@ from agentic_rag_assistant.answering import (
     InvalidGenerationError,
 )
 from agentic_rag_assistant.database import StorageUnavailableError
+from agentic_rag_assistant.conversation_service import answer_with_memory
+from agentic_rag_assistant.conversation_store import (
+    ConversationConflictError, ConversationNotFoundError,
+    PostgresConversationStore, get_conversation_store,
+)
 from agentic_rag_assistant.embeddings import EmbeddingInputError, EmbeddingUnavailableError
 from agentic_rag_assistant.llm.factory import create_llm_provider
 from agentic_rag_assistant.models import AnswerResponse
@@ -35,6 +41,9 @@ class AskRequest(BaseModel):
         default=False, strict=True,
         description="Let the model choose one calculator call using retrieved evidence.",
     )
+    conversation_id: UUID | None = Field(
+        default=None, description="An existing conversation ID; omit for a stateless answer.",
+    )
 
 
 @lru_cache
@@ -46,6 +55,8 @@ def get_answer_service() -> RAGAgent:
     "/ask",
     response_model=AnswerResponse,
     responses={
+        404: {"description": "Conversation not found"},
+        409: {"description": "Conversation changed while generating this answer"},
         502: {"description": "Invalid model output or source references"},
         503: {"description": "Embedding, storage, or LLM provider unavailable"},
         504: {"description": "LLM provider timed out"},
@@ -54,14 +65,20 @@ def get_answer_service() -> RAGAgent:
 async def ask_question(
     body: AskRequest,
     service: Annotated[RAGAgent, Depends(get_answer_service)],
+    store: Annotated[PostgresConversationStore, Depends(get_conversation_store)],
 ) -> AnswerResponse:
     """Answer from retrieved evidence, with server-resolved source citations."""
     try:
         return await run_in_threadpool(
-            service.ask, body.question, top_k=body.top_k,
+            answer_with_memory, service, store, body.question,
+            conversation_id=body.conversation_id, top_k=body.top_k,
             document_id=body.document_id, min_score=body.min_score,
             use_tools=body.use_tools,
         )
+    except ConversationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ConversationConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except EmbeddingInputError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except InvalidGenerationError as exc:

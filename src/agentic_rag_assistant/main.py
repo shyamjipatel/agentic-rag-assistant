@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 
 from agentic_rag_assistant.answers import router as answers_router
+from agentic_rag_assistant.conversations import router as conversations_router
 from agentic_rag_assistant.documents import router as documents_router
 from agentic_rag_assistant.search import router as search_router
 
@@ -10,6 +11,7 @@ app = FastAPI(title="Agentic RAG Assistant", version="0.1.0")
 app.include_router(documents_router)
 app.include_router(search_router)
 app.include_router(answers_router)
+app.include_router(conversations_router)
 
 
 @app.get("/health", tags=["health"])
