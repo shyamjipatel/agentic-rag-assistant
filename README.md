@@ -212,18 +212,27 @@ For remote Hugging Face inference:
 
 ```ini
 LLM_PROVIDER=huggingface
-LLM_MODEL=Qwen/Qwen3-32B:cerebras
+LLM_MODEL=Qwen/Qwen3-32B:deepinfra
 HF_TOKEN=your-hugging-face-token
 ```
 
 The adapter uses `https://router.huggingface.co/v1/chat/completions` with strict
-JSON-schema output. The token needs permission to make calls to Inference
-Providers, and the account needs inference credits. Only the question and
-retrieved passage text are sent. Keep the token in the ignored `.env`.
+JSON-schema output. At [Access Tokens](https://huggingface.co/settings/tokens),
+create a fine-grained token with **Make calls to Inference Providers** enabled
+([authentication requirements](https://huggingface.co/docs/inference-providers/index#authentication)).
+The account also needs inference credits. Only the question and retrieved
+passage text are sent. Keep the token in the ignored `.env`, never in
+`.env.example` or Git.
 
-The model/provider example follows Hugging Face's structured-output guide;
-availability and schema support must be checked for the selected hosted pair.
-The optional `:cerebras` suffix pins the inference backend. You can configure a
+A token can authenticate successfully but still receive a 403 from inference
+if it lacks this permission. Enable the permission on the existing token, or
+create a replacement and update `HF_TOKEN` in `.env`. Restart the API if you
+replace the token.
+
+The example pins the DeepInfra backend using the optional `:deepinfra` suffix
+([DeepInfra integration](https://huggingface.co/docs/inference-providers/providers/deepinfra)).
+Hosted availability can change; verify availability and JSON-schema support for
+the selected model/backend pair. You can configure a
 different compatible hosted model or backend without changing RAG code
 ([Inference Providers](https://huggingface.co/docs/inference-providers/index),
 [Structured Outputs](https://huggingface.co/docs/inference-providers/guides/structured-output)).
@@ -326,8 +335,8 @@ Tests exercise all three adapters using HTTPX mock transports, including their a
 request/response serialization, timeout and refusal handling, and `/ask` citation
 resolution. This does not verify hosted-model access or local-model quality. A
 live answer requires a running Ollama model, or credentials and model access for
-the selected remote provider. The initial development environment has neither
-a running local LLM nor configured hosted generation credentials.
+the selected remote provider. Automated tests do not establish that a particular
+token has inference permissions or that a hosted model is currently available.
 
 ## Development environment
 
