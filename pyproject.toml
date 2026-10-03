@@ -29,6 +29,9 @@ dev = [
     "httpx2>=2.13.1,<3",
     "pytest>=9.1.1,<10",
 ]
+browser-tests = [
+    "playwright>=1.63.0,<1.64",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentic_rag_assistant"]

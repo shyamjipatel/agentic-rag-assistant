@@ -3,6 +3,10 @@
 A portfolio project being built incrementally toward a production-quality RAG
 assistant with LangGraph, tool calling, source citations, vector storage, and Docker.
 
+The browser workspace is available at <http://127.0.0.1:8000/>. It supports
+TXT/PDF uploads, saved conversations, document filters, and expandable source
+passages. The JSON API remains available at `/docs`.
+
 ## Milestone 1: FastAPI foundation
 
 The application exposes `GET /health`, returning HTTP 200 with
@@ -591,6 +595,101 @@ trusted local use, and possession of a conversation ID is not an authorization
 mechanism. Tests cover persistence, concurrency, deletion, rollback, bounded
 context, current-source citations, and isolation between conversations.
 
+## Workspace UI: documents and saved conversations
+
+The UI is served by FastAPI at `/`, with packaged assets at `/static`. It uses
+plain HTML, CSS, and JavaScript modules: there is no separate frontend server,
+Node build, CDN, or runtime dependency. The same-origin client calls the existing
+JSON API; indexing, retrieval, LangGraph, provider configuration, credentials,
+and persistence stay on the backend. The UI modules separate HTTP requests,
+DOM rendering, and workspace interaction state.
+
+### Run the workspace
+
+With the existing virtual environment, embedding cache, and provider configured:
+
+```sh
+source .venv/bin/activate
+docker compose up -d postgres
+python -m agentic_rag_assistant.database
+python -m uvicorn agentic_rag_assistant.main:app --reload
+```
+
+Open <http://127.0.0.1:8000/>. The database command applies the additive session
+title/update-time migration and keeps existing documents and conversation turns.
+Existing sessions get titles from their first question; new sessions get a
+title when the first completed answer is saved. Renaming does not change history.
+
+1. Choose **Upload files** and select UTF-8 TXT or text-based PDF files.
+   Multiple files are queued and indexed sequentially, with progress and errors
+   per file. Limits remain 5 MiB per file and 100 PDF pages; scanned PDFs need OCR.
+2. Ask a question. The first message creates a saved session automatically, or
+   use **New conversation** to create an empty session first.
+3. Choose **All documents** or a particular file as the search scope. Enable
+   **Calculator** when arithmetic from retrieved evidence is useful.
+4. Click a source number or source card to read the exact supporting passage.
+   PDF sources show the page number; calculator calls show their computed result.
+5. Switch sessions in the sidebar. Sessions, titles, answers, citations, and
+   tool results are stored in PostgreSQL and survive browser refreshes and API
+   restarts. The selected session is in the URL; browser storage is not the chat
+   database. You can rename or delete sessions with their sidebar controls.
+
+Uploads prepare a retrieval index rather than training or fine-tuning an LLM.
+Documents are shared across the workspace; conversation history remains separate
+for each session. Deleting a session deletes its turns and keeps the documents.
+Only completed question/answer pairs are persisted; unsent drafts, UI settings,
+and failed requests are not saved. Answers arrive as completed responses rather
+than streamed tokens. The UI prevents duplicate sends while an answer is pending
+and asks for a history reload after an uncertain connection or a 409 conflict.
+
+Session/document lists are paginated; **Load more** fetches additional records.
+The conversation filter searches loaded titles. History initially loads the
+latest 20 turns; **Load earlier messages** retrieves older turns using a turn
+cursor, so longer sessions remain accessible. Request filters and calculator
+selection apply to the current message and are not inherited from older turns.
+
+The responsive layout supports a mobile conversation drawer and document panel,
+Enter to send, Shift+Enter for a new line, accessible native dialogs, visible
+focus, and reduced-motion settings. Model output, filenames, and document text
+are rendered as text; arbitrary HTML and Markdown are not executed. A page
+content-security policy restricts scripts and network requests to the same origin.
+There are no user accounts or workspace ownership rules yet; this remains a
+shared workspace for trusted local use.
+
+### API additions
+
+- `GET /conversations?limit=50&offset=0` lists session metadata and a total count,
+  ordered by latest change. The limit is 1–100; the offset is nonnegative.
+- `PATCH /conversations/{id}` accepts `{"title": "Policy research"}` with a
+  trimmed title of 1–120 characters.
+- `GET /conversations/{id}?limit=20&before_turn=41` reads the most recent turns
+  before turn 41 in chronological order. The total count still covers the session.
+- `GET /documents?limit=50&offset=0` lists indexed filenames, page/character/passage
+  counts, index timestamps, and a total. It does not initialize the embedding model.
+
+Existing create/delete, upload/index, and ask contracts remain compatible.
+
+### Optional browser verification
+
+The browser check runs separately from pytest. It uses real PostgreSQL and the
+actual APIs with deterministic embeddings and a deterministic LLM, so it makes
+no model downloads or paid inference calls. Run it against a dedicated `_test`
+database. It cleans up the records it creates; do not run it concurrently with
+the database integration suite.
+
+```sh
+python -m pip install -c requirements.lock -e '.[dev,browser-tests]'
+TEST_DATABASE_URL=postgresql://rag:rag_local_dev@127.0.0.1:55432/agentic_rag_test \
+  python tests/ui_browser_check.py
+```
+
+By default it launches the installed macOS Chrome and a temporary server on port
+8791. Set `UI_CHROME_PATH` for another Chrome/Chromium executable. Screenshots go
+to `/tmp/agentic-ui-screenshots`; `UI_SCREENSHOT_DIR` overrides that directory.
+Checks cover both upload formats, saved sessions and refresh, source expansion,
+calculator results, renaming/deletion, error recovery, HTML safety, and mobile
+controls. Screenshots from this check use deterministic test answers.
+
 ## Development environment
 
 Use Python 3.13. The initial environment was verified with Python 3.13.7 on macOS
@@ -625,7 +724,8 @@ The existing Python 3.13 `.venv` can be used directly. In VS Code, select
 python -m uvicorn agentic_rag_assistant.main:app --reload
 ```
 
-Open <http://127.0.0.1:8000/docs>, or check the endpoint from another terminal:
+Open the workspace at <http://127.0.0.1:8000/> or the API documentation at
+<http://127.0.0.1:8000/docs>. Check the health endpoint from another terminal:
 
 ```sh
 curl http://127.0.0.1:8000/health
@@ -662,7 +762,7 @@ src/agentic_rag_assistant/
     documents.py            # Preview/index routes and upload error mapping
     search.py               # Validated semantic-search HTTP endpoint
     answers.py              # Ask endpoint and dependency wiring
-    conversations.py        # Create, read, and delete conversation endpoints
+    conversations.py        # Create, list, rename, read, and delete sessions
     conversation_service.py # Load history, answer, then save a completed turn
     conversation_store.py   # PostgreSQL history and optimistic concurrency
     memory.py               # Bounded context and standalone question rewriting
@@ -685,6 +785,14 @@ src/agentic_rag_assistant/
     database.py             # Connections, initialization, configuration checks
     schema.sql              # Vector index schema and additive conversation tables
     settings.py             # Environment-based configuration
+    web.py                  # Same-origin workspace page and security headers
+    static/
+        index.html          # Responsive chat, library, and accessible dialogs
+        app.css             # Workspace design and mobile layouts
+        api.js              # Same-origin API client and error normalization
+        render.js           # Safe messages, citations, and calculator results
+        app.js              # Session, upload, and chat interaction state
+        favicon.svg
 tests/
     conftest.py             # In-memory PDF test payloads
     test_health.py
@@ -702,6 +810,8 @@ tests/
     test_memory.py          # Bounded context and fresh-evidence follow-up behavior
     test_conversations_api.py
     test_conversation_store.py # PostgreSQL persistence, concurrency, and rollback
+    test_workspace_api.py   # Asset serving, directories, rename, history cursors
+    ui_browser_check.py     # Optional real-Chrome UI and PostgreSQL verification
     test_tool_protocol.py   # OpenAI optional function-call status compatibility
     test_llm_providers.py
     test_answers_api.py
@@ -737,6 +847,9 @@ requirements.lock          # Exact runtime and test dependency versions
   to pip as a constraints file. It includes test tools and was verified on Python
   3.13/macOS arm64; other platforms must be verified when added. Build tooling is
   resolved separately in pip's isolated build environment.
+- Playwright is confined to the optional `browser-tests` extra. The application
+  and ordinary pytest suite do not require it. Its transitive versions are also
+  constrained by `requirements.lock` when the extra is installed.
 - The document router handles HTTP concerns and delegates to the ingestion
   service. Parsing, chunking, and document data have separate modules so they can
   be tested without an HTTP request. Standard Python dataclasses define the typed
