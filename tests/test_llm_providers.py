@@ -4,9 +4,9 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
+from agentic_rag_assistant.agent import RAGAgent
 from agentic_rag_assistant.answering import (
     SYSTEM_PROMPT,
-    AnswerService,
     GeneratedAnswer,
     GenerationTimeoutError,
     GenerationUnavailableError,
@@ -287,7 +287,7 @@ def test_an_unconfigured_provider_does_not_block_empty_retrieval():
         def search(self, query, **options):
             return []
 
-    result = AnswerService(
+    result = RAGAgent(
         EmptyRetriever(), create_llm_provider(Settings(_env_file=None, llm_provider="huggingface"))
     ).ask("Question?")
     assert result.answered is False

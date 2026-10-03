@@ -163,20 +163,20 @@ unmatched filter returns an empty list.
 ## Milestone 4: Answers with source citations
 
 `POST /ask` retrieves evidence, asks the configured LLM for a structured answer,
-and resolves source citations against the retrieved chunks. LangGraph, tool
-calling, and conversation memory remain separate future milestones.
+and resolves source citations against the retrieved chunks. Milestone 5 adds
+LangGraph orchestration; tool calling and conversation memory follow later.
 
 The RAG service depends on an `LLMProvider` protocol, not a concrete provider.
 Only the adapter factory selects Ollama, remote Hugging Face, or OpenAI:
 
 ```text
 POST /ask
-    -> AnswerService -> RetrievalService -> local embeddings + PostgreSQL
-                     -> LLMProvider
-                          -> OllamaProvider       (default: local)
-                          -> HuggingFaceProvider  (remote)
-                          -> OpenAIProvider       (remote)
-                     -> validate references and attach stored source metadata
+    -> RAGAgent -> RetrievalService -> local embeddings + PostgreSQL
+                -> LLMProvider
+                     -> OllamaProvider       (default: local)
+                     -> HuggingFaceProvider  (remote)
+                     -> OpenAIProvider       (remote)
+                -> validate references and attach stored source metadata
 ```
 
 ### Choose the LLM through configuration
@@ -338,6 +338,55 @@ live answer requires a running Ollama model, or credentials and model access for
 the selected remote provider. Automated tests do not establish that a particular
 token has inference permissions or that a hosted model is currently available.
 
+## Milestone 5: LangGraph orchestration
+
+`POST /ask` now runs through a compiled LangGraph `StateGraph`. The request and
+response formats from Milestone 4 are unchanged, including document filters,
+validated citations, abstention, and HTTP error handling.
+
+```mermaid
+flowchart TD
+    Start([Start]) --> Retrieve[Retrieve passages]
+    Retrieve --> Evidence{Any passages?}
+    Evidence -->|Yes| Generate[Generate structured answer]
+    Evidence -->|No| Abstain[Insufficient-evidence response]
+    Generate --> Validate[Validate citations and resolve source metadata]
+    Validate --> Finish([End])
+    Abstain --> Finish
+```
+
+The implementation in `agent.py` has three LangGraph concepts:
+
+- **State** carries the question, retrieval filters, passages, structured model
+  output, and final response for one request. An output schema limits the graph's
+  returned value to the resolved response. Credentials are held by the provider,
+  rather than copied into graph state.
+- **Nodes** perform retrieval, generation, citation validation, or abstention.
+  They reuse the existing retrieval service, provider protocol, and citation
+  validator. Provider selection remains in the adapter factory.
+- **Edges** define the execution order. A conditional edge after retrieval skips
+  generation when there are no passages, so that branch makes no LLM request.
+
+The graph compiles once when the cached agent dependency is created. Each `ask`
+invocation starts with fresh state; there is no checkpointer or conversation
+history. Tests cover both graph branches, repeated and concurrent invocations,
+evidence limits, and failure propagation. Failed nodes propagate their exceptions
+to the existing HTTP boundary; there are no graph retries or provider fallbacks.
+Each invocation performs one retrieval and at most one generation request.
+
+This is the orchestration foundation for the agent: its route is currently
+determined by application code. Model-driven tool selection is Phase 6, and
+conversation memory is Phase 7. Introducing them separately keeps each new
+behavior understandable and testable
+([Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api),
+[Workflows and agents](https://docs.langchain.com/oss/python/langgraph/workflows-agents)).
+
+Use the existing `/ask` example above to try the graph. After pulling this change,
+install the updated dependencies with
+`python -m pip install -c requirements.lock -e '.[dev]'` and restart the API.
+The graph change does not require a database migration, model download, or
+document reindexing.
+
 ## Development environment
 
 Use Python 3.13. The initial environment was verified with Python 3.13.7 on macOS
@@ -409,7 +458,8 @@ src/agentic_rag_assistant/
     documents.py            # Preview/index routes and upload error mapping
     search.py               # Validated semantic-search HTTP endpoint
     answers.py              # Ask endpoint and dependency wiring
-    answering.py            # Provider contract, evidence flow, citation validation
+    agent.py                # LangGraph state, nodes, routing, request isolation
+    answering.py            # Provider contracts, evidence prompt, citation validation
     llm/
         factory.py          # Selects local or remote LLM adapters from settings
         common.py           # HTTP transport and structured-output validation
@@ -436,6 +486,7 @@ tests/
     test_retrieval_api.py
     test_vector_store.py    # Dedicated-database integration tests
     test_answering.py
+    test_agent.py           # Real graph routing, isolation, and failure boundaries
     test_llm_providers.py
     test_answers_api.py
 examples/

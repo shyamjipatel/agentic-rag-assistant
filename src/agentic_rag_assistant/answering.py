@@ -110,25 +110,3 @@ def resolve_answer(
             )
         )
     return AnswerResponse(question, "\n\n".join(rendered), True, citations)
-
-
-class AnswerService:
-    def __init__(self, retriever: PassageRetriever, provider: LLMProvider):
-        self.retriever = retriever
-        self.provider = provider
-
-    def ask(
-        self, question: str, *, top_k: int = MAX_ANSWER_SOURCES,
-        document_id: str | None = None, min_score: float | None = None,
-    ) -> AnswerResponse:
-        if not 1 <= top_k <= MAX_ANSWER_SOURCES:
-            raise ValueError("Answers require between one and five retrieved passages.")
-        sources = self.retriever.search(
-            question, top_k=top_k, document_id=document_id, min_score=min_score
-        )
-        if not sources:
-            return AnswerResponse(question, INSUFFICIENT_EVIDENCE, False, [])
-        if len(sources) > top_k:
-            raise ValueError("The retriever exceeded the requested evidence limit.")
-        generated = self.provider.generate(question, sources)
-        return resolve_answer(question, generated, sources)

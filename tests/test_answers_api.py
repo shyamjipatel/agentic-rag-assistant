@@ -4,9 +4,9 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from agentic_rag_assistant.agent import RAGAgent
 from agentic_rag_assistant.answering import (
     INSUFFICIENT_EVIDENCE,
-    AnswerService,
     GeneratedAnswer,
     GenerationTimeoutError,
     GenerationUnavailableError,
@@ -63,7 +63,7 @@ def answer_client(pdf_factory):
         SearchHit(document.document_id, document.filename, 0.8, document.chunks[0])
     ])
     provider = FakeProvider()
-    service = AnswerService(retriever, provider)
+    service = RAGAgent(retriever, provider)
     app.dependency_overrides[get_answer_service] = lambda: service
     try:
         with TestClient(app) as client:

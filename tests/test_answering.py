@@ -3,9 +3,9 @@ import json
 import pytest
 from pydantic import ValidationError
 
+from agentic_rag_assistant.agent import RAGAgent
 from agentic_rag_assistant.answering import (
     INSUFFICIENT_EVIDENCE,
-    AnswerService,
     GeneratedAnswer,
     InvalidGenerationError,
     SupportedStatement,
@@ -90,18 +90,18 @@ class FakeGenerator:
 
 def test_empty_retrieval_does_not_call_the_model() -> None:
     generator = FakeGenerator()
-    result = AnswerService(FakeRetriever([]), generator).ask("How much leave?")
+    result = RAGAgent(FakeRetriever([]), generator).ask("How much leave?")
     assert result.answered is False
     assert result.answer == INSUFFICIENT_EVIDENCE
     assert result.citations == []
     assert not hasattr(generator, "question")
 
 
-def test_answer_service_forwards_filters_and_supplies_only_retrieved_evidence() -> None:
+def test_agent_forwards_filters_and_supplies_only_retrieved_evidence() -> None:
     hits = [source(1)]
     retriever = FakeRetriever(hits)
     generator = FakeGenerator()
-    result = AnswerService(retriever, generator).ask(
+    result = RAGAgent(retriever, generator).ask(
         "How much leave?", top_k=2, document_id="a" * 64, min_score=0.7
     )
     assert retriever.options == {"top_k": 2, "document_id": "a" * 64, "min_score": 0.7}

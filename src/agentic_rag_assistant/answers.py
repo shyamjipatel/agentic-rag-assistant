@@ -7,9 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, StringConstraints
 
+from agentic_rag_assistant.agent import RAGAgent
 from agentic_rag_assistant.answering import (
     MAX_ANSWER_SOURCES,
-    AnswerService,
     GenerationTimeoutError,
     GenerationUnavailableError,
     InvalidGenerationError,
@@ -34,8 +34,8 @@ class AskRequest(BaseModel):
 
 
 @lru_cache
-def get_answer_service() -> AnswerService:
-    return AnswerService(get_retrieval_service(), create_llm_provider(get_settings()))
+def get_answer_service() -> RAGAgent:
+    return RAGAgent(get_retrieval_service(), create_llm_provider(get_settings()))
 
 
 @router.post(
@@ -49,7 +49,7 @@ def get_answer_service() -> AnswerService:
 )
 async def ask_question(
     body: AskRequest,
-    service: Annotated[AnswerService, Depends(get_answer_service)],
+    service: Annotated[RAGAgent, Depends(get_answer_service)],
 ) -> AnswerResponse:
     """Answer from retrieved evidence, with server-resolved source citations."""
     try:
