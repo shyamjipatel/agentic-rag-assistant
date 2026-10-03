@@ -91,6 +91,14 @@ verification enabled. It defaults to ordinary HTTPS downloads because the native
 Xet transport failed on the development network. Set `HF_HUB_DISABLE_XET=0` before
 the command to opt into Xet ([Hugging Face environment variables](https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfhubdisablexet)).
 
+Model loading and preparation set `ORT_DISABLE_TELEMETRY=1` by default before
+ONNX Runtime initializes. This disables its native background uploader, which
+caused a shutdown crash during macOS verification
+([ONNX Runtime setting](https://github.com/microsoft/onnxruntime/blob/main/docs/Privacy.md#disabling-telemetry)).
+An explicitly exported value takes precedence. Restart an already running API
+for this setting to apply; a runtime imported earlier cannot be reconfigured
+through this environment setting.
+
 Compose runs only PostgreSQL for this milestone. It binds to `127.0.0.1:55432`
 and keeps data in a named Docker volume. The example credentials are for local
 development. If you change the database credentials or port, update
@@ -579,6 +587,7 @@ tests/
     test_agent.py           # Real graph routing, isolation, and failure boundaries
     test_tools.py           # Decimal arithmetic and invalid calculator inputs
     test_tool_calling.py    # Native tool calling through adapters, graph, and HTTP
+    test_tool_protocol.py   # OpenAI optional function-call status compatibility
     test_llm_providers.py
     test_answers_api.py
 examples/
@@ -606,7 +615,8 @@ requirements.lock          # Exact runtime and test dependency versions
   Plain text parsing and chunking use Python's standard library. FastEmbed runs
   local embeddings, Psycopg connects to PostgreSQL, and pgvector adapts vectors.
   Pydantic Settings loads configuration; Truststore uses system certificates for
-  model preparation. LangGraph will be introduced in its own milestone.
+  model preparation. LangGraph orchestrates retrieval, optional tool execution,
+  and citation-validated answers.
 - `pyproject.toml` defines allowed dependency ranges. `requirements.lock` pins
   their transitive dependencies for repeatable development installs and is passed
   to pip as a constraints file. It includes test tools and was verified on Python

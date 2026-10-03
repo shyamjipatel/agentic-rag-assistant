@@ -1,5 +1,6 @@
 """Local BGE embeddings with explicit input and vector validation."""
 
+import os
 from math import isfinite
 from pathlib import Path
 from threading import Lock
@@ -48,6 +49,8 @@ class LocalEmbedder:
     def _load(self) -> None:
         if self._model is not None:
             return
+        # Disable the native background uploader before ONNX Runtime initializes.
+        os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
         from fastembed import TextEmbedding
         from tokenizers import Tokenizer
 
@@ -101,8 +104,6 @@ class LocalEmbedder:
 
 
 if __name__ == "__main__":
-    import os
-
     # This is an application entry point, not library import-time TLS mutation.
     import truststore
 
@@ -110,6 +111,7 @@ if __name__ == "__main__":
     # Ordinary HTTPS avoids native Xet transport failures on some networks.
     # Users can opt back in by setting HF_HUB_DISABLE_XET=0 explicitly.
     os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+    os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
     from fastembed import TextEmbedding
 
     from agentic_rag_assistant.settings import get_settings

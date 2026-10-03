@@ -1,4 +1,7 @@
+import os
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from tokenizers import Tokenizer
@@ -74,3 +77,19 @@ def test_model_load_failure_becomes_an_actionable_service_error(monkeypatch) -> 
     monkeypatch.setattr(embedder, "_load", fail_load)
     with pytest.raises(EmbeddingUnavailableError, match="Prepare the model"):
         embedder.embed_query("A question?")
+
+
+def test_loading_disables_native_telemetry_before_constructing_the_offline_model(monkeypatch):
+    monkeypatch.delenv("ORT_DISABLE_TELEMETRY", raising=False)
+    prepared = cached_embedder()
+    model = prepared._model
+    model.model = SimpleNamespace(tokenizer=prepared._tokenizer)
+
+    def make_model(**options):
+        assert os.environ["ORT_DISABLE_TELEMETRY"] == "1"
+        assert options["local_files_only"] is True
+        return model
+
+    monkeypatch.setitem(sys.modules, "fastembed", SimpleNamespace(TextEmbedding=make_model))
+    embedder = LocalEmbedder(Path("unused-test-cache"))
+    assert len(embedder.embed_query("A question?")) == EMBEDDING_DIMENSIONS
