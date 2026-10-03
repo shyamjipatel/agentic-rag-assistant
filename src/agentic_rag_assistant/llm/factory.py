@@ -8,12 +8,21 @@ from agentic_rag_assistant.answering import (
 from agentic_rag_assistant.llm.huggingface import HuggingFaceProvider
 from agentic_rag_assistant.llm.ollama import OllamaProvider
 from agentic_rag_assistant.llm.openai import OpenAIProvider
-from agentic_rag_assistant.models import SearchHit
+from agentic_rag_assistant.models import SearchHit, ToolResult
+from agentic_rag_assistant.tools import ToolSelection
 from agentic_rag_assistant.settings import Settings
 
 
 class UnconfiguredProvider:
-    def generate(self, question: str, sources: list[SearchHit]) -> GeneratedAnswer:
+    def generate(
+        self, question: str, sources: list[SearchHit], *,
+        tool_selection: ToolSelection | None = None, tool_result: ToolResult | None = None,
+    ) -> GeneratedAnswer:
+        raise GenerationUnavailableError(
+            "Set LLM_MODEL for the selected remote provider to generate answers."
+        )
+
+    def select_tool(self, question: str, sources: list[SearchHit]) -> ToolSelection:
         raise GenerationUnavailableError(
             "Set LLM_MODEL for the selected remote provider to generate answers."
         )

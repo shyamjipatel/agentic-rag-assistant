@@ -2,11 +2,14 @@
 
 import json
 import re
-from typing import Annotated, Protocol
+from typing import TYPE_CHECKING, Annotated, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from agentic_rag_assistant.models import AnswerResponse, SearchHit, SourceCitation
+from agentic_rag_assistant.models import AnswerResponse, SearchHit, SourceCitation, ToolResult
+
+if TYPE_CHECKING:
+    from agentic_rag_assistant.tools import ToolSelection
 
 MAX_ANSWER_SOURCES = 5
 INSUFFICIENT_EVIDENCE = (
@@ -53,7 +56,12 @@ class GeneratedAnswer(BaseModel):
 
 
 class LLMProvider(Protocol):
-    def generate(self, question: str, sources: list[SearchHit]) -> GeneratedAnswer: ...
+    def generate(
+        self, question: str, sources: list[SearchHit], *,
+        tool_selection: "ToolSelection | None" = None, tool_result: ToolResult | None = None,
+    ) -> GeneratedAnswer: ...
+
+    def select_tool(self, question: str, sources: list[SearchHit]) -> "ToolSelection": ...
 
 
 class PassageRetriever(Protocol):
