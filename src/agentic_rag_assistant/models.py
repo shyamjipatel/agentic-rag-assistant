@@ -45,3 +45,20 @@ class SearchHit:
 class SearchResponse:
     query: str
     results: list[SearchHit]
+
+
+@dataclass(frozen=True)
+class SourceCitation:
+    source_id: int
+    document_id: str
+    filename: str
+    score: float
+    chunk: DocumentChunk
+
+
+@dataclass(frozen=True)
+class AnswerResponse:
+    question: str
+    answer: str
+    answered: bool
+    citations: list[SourceCitation]
