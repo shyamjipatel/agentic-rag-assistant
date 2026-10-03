@@ -1,0 +1,34 @@
+NEXUS AI
+PRICING AND SERVICE LIMITS
+
+Starter Plan
+
+Price: $29 per month
+Users: Up to 5
+Document storage: 2 GB
+Monthly AI queries: 2,000
+Support: Standard
+
+Professional Plan
+
+Price: $99 per month
+Users: Up to 25
+Document storage: 20 GB
+Monthly AI queries: 20,000
+Support: Standard
+
+Enterprise Plan
+
+Pricing is customized based on organizational requirements.
+
+Enterprise customers receive unlimited users, configurable storage,
+custom AI query limits, SSO integration, audit logging, and Premium
+24x7 support.
+
+API Rate Limits
+
+Starter: 20 requests per minute
+Professional: 100 requests per minute
+Enterprise: Configurable
+
+Individual uploaded files cannot exceed 20 MB.

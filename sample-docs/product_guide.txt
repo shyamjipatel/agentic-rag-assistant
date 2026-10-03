@@ -1,0 +1,27 @@
+NEXUS AI - PRODUCT GUIDE
+
+Nexus AI is an enterprise knowledge assistant developed by ACME Technologies.
+
+Supported Documents
+
+Nexus AI currently supports PDF and TXT documents. The maximum supported individual file size is 20 MB.
+
+Document Processing
+
+Uploaded documents are parsed into text and divided into smaller chunks. Each chunk is converted into a vector embedding and stored in the vector database.
+
+Question Answering
+
+When a user asks a question, Nexus AI retrieves the most relevant document chunks. The retrieved context is supplied to a large language model to generate the final answer.
+
+Source Citations
+
+Every document-based answer should include references to the source documents used to generate the response.
+
+Security
+
+Documents are isolated by workspace. Users from one workspace cannot retrieve documents belonging to another workspace.
+
+Retention
+
+Deleted documents and their associated vector embeddings are permanently removed within 24 hours.

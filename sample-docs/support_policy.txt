@@ -1,0 +1,29 @@
+ACME TECHNOLOGIES - CUSTOMER SUPPORT POLICY
+
+Support Plans
+
+Standard Support is available Monday through Friday from 9:00 AM to 6:00 PM IST.
+
+Premium Support provides 24x7 support for production incidents.
+
+Severity Levels
+
+Severity 1 represents a complete production outage or critical security incident.
+
+Severity 2 represents major functionality being unavailable while the overall system remains operational.
+
+Severity 3 represents minor functionality problems or general technical questions.
+
+Response Times
+
+Premium customers receive an initial response within:
+
+Severity 1: 30 minutes
+Severity 2: 2 hours
+Severity 3: 8 business hours
+
+Standard customers receive an initial response within one business day.
+
+Escalation
+
+Severity 1 incidents are automatically escalated to the on-call engineering team.
