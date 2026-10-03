@@ -2,9 +2,11 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 
+from agentic_rag_assistant.database import StorageUnavailableError
+from agentic_rag_assistant.embeddings import EmbeddingInputError, EmbeddingUnavailableError
 from agentic_rag_assistant.ingestion import (
     MAX_DOCUMENT_BYTES,
     DocumentLimitError,
@@ -12,7 +14,8 @@ from agentic_rag_assistant.ingestion import (
     UnsupportedDocumentError,
     ingest_document,
 )
-from agentic_rag_assistant.models import IngestedDocument
+from agentic_rag_assistant.models import IngestedDocument, IndexedDocument
+from agentic_rag_assistant.retrieval import RetrievalService, get_retrieval_service
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -29,7 +32,12 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 async def ingest_upload(
     file: Annotated[UploadFile, File(description="A UTF-8 .txt file or text-based PDF")],
 ) -> IngestedDocument:
-    """Return parsed chunks for inspection; documents are not stored yet."""
+    """Return parsed chunks for inspection without storing the document."""
+    return await parse_upload(file)
+
+
+async def parse_upload(file: UploadFile) -> IngestedDocument:
+    """Read and close an upload, mapping parsing failures to HTTP errors."""
     try:
         if file.size is not None and file.size > MAX_DOCUMENT_BYTES:
             raise DocumentLimitError("Documents must be at most 5 MiB.")
@@ -45,3 +53,27 @@ async def ingest_upload(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:
         await file.close()
+
+
+@router.post(
+    "/index",
+    response_model=IndexedDocument,
+    responses={
+        400: {"description": "Invalid document"},
+        413: {"description": "Document limit exceeded"},
+        415: {"description": "Unsupported document format"},
+        503: {"description": "Embedding model or vector storage unavailable"},
+    },
+)
+async def index_upload(
+    file: Annotated[UploadFile, File(description="A UTF-8 .txt file or text-based PDF")],
+    service: Annotated[RetrievalService, Depends(get_retrieval_service)],
+) -> IndexedDocument:
+    """Parse, embed, and atomically store a document for semantic search."""
+    document = await parse_upload(file)
+    try:
+        return await run_in_threadpool(service.index, document)
+    except EmbeddingInputError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (EmbeddingUnavailableError, StorageUnavailableError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc

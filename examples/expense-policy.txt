@@ -1,0 +1,10 @@
+Demonstration expense policy (fictional company)
+
+Employees can claim reimbursement for approved business travel, accommodation,
+and client meals. Upload an itemized receipt and a brief business reason to the
+finance portal within 30 days of the purchase. Your manager must approve the
+claim before finance processes payment. Reimbursements are paid with the next
+monthly payroll after approval.
+
+Personal purchases and travel upgrades are not reimbursable. Obtain written
+approval before booking any business trip that is expected to cost over $500.
