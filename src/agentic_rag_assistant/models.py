@@ -1,6 +1,6 @@
 """Document data shared by the ingestion service and HTTP response."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -57,8 +57,19 @@ class SourceCitation:
 
 
 @dataclass(frozen=True)
+class ToolResult:
+    tool_name: str
+    operation: str
+    left: str
+    right: str
+    value: str
+    source_ids: list[int]
+
+
+@dataclass(frozen=True)
 class AnswerResponse:
     question: str
     answer: str
     answered: bool
     citations: list[SourceCitation]
+    tool_results: list[ToolResult] = field(default_factory=list)
