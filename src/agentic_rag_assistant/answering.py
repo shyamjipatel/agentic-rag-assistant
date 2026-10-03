@@ -6,7 +6,9 @@ from typing import TYPE_CHECKING, Annotated, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from agentic_rag_assistant.models import AnswerResponse, SearchHit, SourceCitation, ToolResult
+from agentic_rag_assistant.models import (
+    AnswerResponse, ConversationTurn, SearchHit, SourceCitation, ToolResult,
+)
 
 if TYPE_CHECKING:
     from agentic_rag_assistant.tools import ToolSelection
@@ -62,6 +64,8 @@ class LLMProvider(Protocol):
     ) -> GeneratedAnswer: ...
 
     def select_tool(self, question: str, sources: list[SearchHit]) -> "ToolSelection": ...
+
+    def rewrite_question(self, question: str, history: list[ConversationTurn]) -> str: ...
 
 
 class PassageRetriever(Protocol):

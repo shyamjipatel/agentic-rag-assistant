@@ -15,7 +15,8 @@ from agentic_rag_assistant.answering import (
     PassageRetriever,
     resolve_answer,
 )
-from agentic_rag_assistant.models import AnswerResponse, SearchHit, ToolResult
+from agentic_rag_assistant.memory import RECENT_TURNS
+from agentic_rag_assistant.models import AnswerResponse, ConversationTurn, SearchHit, ToolResult
 from agentic_rag_assistant.tools import ToolSelection, execute_calculator
 
 
@@ -25,6 +26,7 @@ class AgentInput(TypedDict):
     document_id: str | None
     min_score: float | None
     use_tools: NotRequired[bool]
+    history: NotRequired[list[ConversationTurn]]
 
 
 class AgentState(AgentInput):
@@ -33,6 +35,7 @@ class AgentState(AgentInput):
     response: NotRequired[AnswerResponse]
     selection: NotRequired[ToolSelection]
     tool_result: NotRequired[ToolResult]
+    standalone_question: NotRequired[str]
 
 
 class AgentOutput(TypedDict):
@@ -54,7 +57,11 @@ class RAGAgent:
         builder.add_node("abstain", self._abstain)
         builder.add_node("choose_tool", self._choose_tool)
         builder.add_node("execute_tool", self._execute_tool)
-        builder.add_edge(START, "retrieve")
+        builder.add_node("contextualize", self._contextualize)
+        builder.add_conditional_edges(
+            START, self._route_start, {"contextualize": "contextualize", "retrieve": "retrieve"},
+        )
+        builder.add_edge("contextualize", "retrieve")
         builder.add_conditional_edges(
             "retrieve", self._route_after_retrieval,
             {"generate": "generate", "abstain": "abstain", "choose_tool": "choose_tool"},
@@ -69,9 +76,20 @@ class RAGAgent:
         builder.add_edge("abstain", END)
         self.graph = builder.compile(name="rag_answer")
 
-    def _retrieve(self, state: AgentInput) -> dict[str, list[SearchHit]]:
+    def _route_start(self, state: AgentInput) -> Literal["contextualize", "retrieve"]:
+        return "contextualize" if state.get("history") else "retrieve"
+
+    def _contextualize(self, state: AgentState) -> dict[str, str]:
+        return {"standalone_question": self.provider.rewrite_question(
+            state["question"], state["history"],
+        )}
+
+    def _effective_question(self, state: AgentState) -> str:
+        return state.get("standalone_question", state["question"])
+
+    def _retrieve(self, state: AgentState) -> dict[str, list[SearchHit]]:
         sources = self.retriever.search(
-            state["question"], top_k=state["top_k"],
+            self._effective_question(state), top_k=state["top_k"],
             document_id=state["document_id"], min_score=state["min_score"],
         )
         if len(sources) > state["top_k"]:
@@ -90,7 +108,9 @@ class RAGAgent:
             raise GenerationUnavailableError(
                 "The configured provider does not support tool calling."
             )
-        return {"selection": self.provider.select_tool(state["question"], state["sources"])}
+        return {"selection": self.provider.select_tool(
+            self._effective_question(state), state["sources"],
+        )}
 
     def _route_after_selection(self, state: AgentState) -> Literal["execute_tool", "generate"]:
         return "execute_tool" if state["selection"].call is not None else "generate"
@@ -104,10 +124,12 @@ class RAGAgent:
     def _generate(self, state: AgentState) -> dict[str, GeneratedAnswer]:
         if "tool_result" in state:
             return {"generated": self.provider.generate(
-                state["question"], state["sources"],
+                self._effective_question(state), state["sources"],
                 tool_selection=state["selection"], tool_result=state["tool_result"],
             )}
-        return {"generated": self.provider.generate(state["question"], state["sources"])}
+        return {"generated": self.provider.generate(
+            self._effective_question(state), state["sources"],
+        )}
 
     def _validate_citations(self, state: AgentState) -> AgentOutput:
         response = resolve_answer(
@@ -130,6 +152,7 @@ class RAGAgent:
         self, question: str, *, top_k: int = MAX_ANSWER_SOURCES,
         document_id: str | None = None, min_score: float | None = None,
         use_tools: bool = False,
+        history: list[ConversationTurn] | None = None,
     ) -> AnswerResponse:
         if not 1 <= top_k <= MAX_ANSWER_SOURCES:
             raise ValueError("Answers require between one and five retrieved passages.")
@@ -137,5 +160,6 @@ class RAGAgent:
             "question": question, "top_k": top_k,
             "document_id": document_id, "min_score": min_score,
             "use_tools": use_tools,
+            "history": (history or [])[-RECENT_TURNS:],
         })
         return result["response"]

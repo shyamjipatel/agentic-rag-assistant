@@ -12,7 +12,10 @@ from agentic_rag_assistant.llm.common import parse_answer, post_json
 from agentic_rag_assistant.llm.tool_support import (
     answer_messages, parse_chat_selection, tool_messages,
 )
-from agentic_rag_assistant.models import SearchHit, ToolResult
+from agentic_rag_assistant.memory import (
+    StandaloneQuestion, parse_rewritten_question, rewrite_messages,
+)
+from agentic_rag_assistant.models import ConversationTurn, SearchHit, ToolResult
 from agentic_rag_assistant.tools import ToolSelection, calculator_definition
 
 
@@ -44,7 +47,10 @@ class HuggingFaceProvider:
         self.max_output_tokens = max_output_tokens
         self.transport = transport
 
-    def _request(self, conversation: list[dict], *, select_tools: bool = False):
+    def _request(
+        self, conversation: list[dict], *, select_tools: bool = False,
+        response_schema: type[BaseModel] = GeneratedAnswer,
+    ):
         if not self.token.strip():
             raise GenerationUnavailableError("Set HF_TOKEN for the Hugging Face provider.")
         payload = {
@@ -60,8 +66,8 @@ class HuggingFaceProvider:
             payload["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {
-                    "name": "sourced_answer", "strict": True,
-                    "schema": GeneratedAnswer.model_json_schema(),
+                    "name": "sourced_answer" if response_schema is GeneratedAnswer else "question",
+                    "strict": True, "schema": response_schema.model_json_schema(),
                 },
             }
         return post_json(
@@ -94,6 +100,15 @@ class HuggingFaceProvider:
         data = self._request(answer_messages(
             question, sources, tool_selection, tool_result, provider="huggingface",
         ))
+        return parse_answer(self._extract_text(data))
+
+    def rewrite_question(self, question: str, history: list[ConversationTurn]) -> str:
+        data = self._request(
+            rewrite_messages(question, history), response_schema=StandaloneQuestion,
+        )
+        return parse_rewritten_question(self._extract_text(data))
+
+    def _extract_text(self, data) -> str:
         try:
             envelope = CompletionEnvelope.model_validate(data)
         except ValidationError as exc:
@@ -111,4 +126,4 @@ class HuggingFaceProvider:
             raise InvalidGenerationError("Hugging Face returned no structured answer text.")
         if data["choices"][0]["message"].get("tool_calls"):
             raise InvalidGenerationError("Hugging Face requested a tool during final generation.")
-        return parse_answer(choice.message.content)
+        return choice.message.content
