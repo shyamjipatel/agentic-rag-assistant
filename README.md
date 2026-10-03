@@ -167,23 +167,70 @@ and resolves source citations against the retrieved chunks. LangGraph, tool
 calling, and conversation memory remain separate future milestones.
 
 The RAG service depends on an `LLMProvider` protocol, not a concrete provider.
-Only the adapter factory selects OpenAI or Ollama:
+Only the adapter factory selects Ollama, remote Hugging Face, or OpenAI:
 
 ```text
 POST /ask
     -> AnswerService -> RetrievalService -> local embeddings + PostgreSQL
                      -> LLMProvider
-                          -> OpenAIProvider
-                          -> OllamaProvider
+                          -> OllamaProvider       (default: local)
+                          -> HuggingFaceProvider  (remote)
+                          -> OpenAIProvider       (remote)
                      -> validate references and attach stored source metadata
 ```
 
 ### Choose the LLM through configuration
 
-Add one of these configurations to your existing `.env`. The provider and model
-are deliberately unset in `.env.example`; neither is selected automatically.
+Local inference is the default, both in application settings and `.env.example`.
+If the LLM variables are absent or empty, settings select Ollama and `qwen2.5:7b`.
+To override the configuration, edit your existing `.env` rather than replacing it.
 
-For OpenAI:
+Default local configuration:
+
+```ini
+LLM_PROVIDER=ollama
+LLM_MODEL=qwen2.5:7b
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+```
+
+Install Ollama from <https://ollama.com/download>, start its local service, then
+download the model named in `LLM_MODEL`:
+
+```sh
+ollama pull qwen2.5:7b
+```
+
+If you use the standalone CLI, run `ollama serve` in another terminal. The adapter
+calls the local `/api/chat` endpoint with a JSON schema, streaming disabled, and
+an 8,192-token context. Choose a local model that supports that context size and
+structured output. The default [Qwen 2.5 7B model](https://ollama.com/library/qwen2.5:7b)
+can be replaced through configuration. Selecting the default does not install
+Ollama or download model weights automatically. Ollama cloud models are outside this
+adapter's scope ([Ollama Structured Outputs](https://docs.ollama.com/capabilities/structured-outputs)).
+
+For remote Hugging Face inference:
+
+```ini
+LLM_PROVIDER=huggingface
+LLM_MODEL=Qwen/Qwen3-32B:cerebras
+HF_TOKEN=your-hugging-face-token
+```
+
+The adapter uses `https://router.huggingface.co/v1/chat/completions` with strict
+JSON-schema output. The token needs permission to make calls to Inference
+Providers, and the account needs inference credits. Only the question and
+retrieved passage text are sent. Keep the token in the ignored `.env`.
+
+The model/provider example follows Hugging Face's structured-output guide;
+availability and schema support must be checked for the selected hosted pair.
+The optional `:cerebras` suffix pins the inference backend. You can configure a
+different compatible hosted model or backend without changing RAG code
+([Inference Providers](https://huggingface.co/docs/inference-providers/index),
+[Structured Outputs](https://huggingface.co/docs/inference-providers/guides/structured-output)).
+Hosted inference consumes credits and can incur usage charges
+([pricing](https://huggingface.co/docs/inference-providers/pricing)).
+
+OpenAI remains available as another remote option:
 
 ```ini
 LLM_PROVIDER=openai
@@ -200,27 +247,11 @@ Only the question and retrieved passage text are sent to OpenAI. Keep your real
 key in the ignored `.env`, never in `.env.example` or Git. Calls use paid API
 usage; no calls are made during the automated tests.
 
-For a local Ollama model:
-
-```ini
-LLM_PROVIDER=ollama
-LLM_MODEL=llama3.2:3b
-OLLAMA_BASE_URL=http://127.0.0.1:11434
-```
-
-Install Ollama from <https://ollama.com/download>, start its local service, then
-download the model named in `LLM_MODEL`:
-
-```sh
-ollama pull llama3.2:3b
-```
-
-If you use the standalone CLI, run `ollama serve` in another terminal. The adapter
-calls the local `/api/chat` endpoint with a JSON schema, streaming disabled, and
-an 8,192-token context. Choose a local model that supports that context size and
-structured output. The example [Llama 3.2 model](https://ollama.com/library/llama3.2)
-can be replaced through configuration. Ollama cloud models are outside this
-adapter's scope ([Ollama Structured Outputs](https://docs.ollama.com/capabilities/structured-outputs)).
+Set both `LLM_PROVIDER` and `LLM_MODEL` when switching to a remote provider: local
+model tags and hosted model identifiers have different formats. If a remote
+provider is selected without a model, generation returns an actionable 503 rather
+than applying the local model default. Missing credentials also return 503 before
+any hosted request is sent. Credentials alone do not select a remote provider.
 
 Restart the API after changing `.env`: settings and service instances are cached
 within each process. Switching the LLM provider or model does **not** change the
@@ -231,6 +262,7 @@ Optional settings are `LLM_TIMEOUT_SECONDS` (default 120) and
 `LLM_MAX_OUTPUT_TOKENS` (default 4,096). OpenAI reasoning models use the output
 budget for reasoning as well as answer tokens; increase it if responses are
 incomplete. There are no automatic retries or fallbacks to a different provider.
+A local failure remains local even when remote credentials are configured.
 
 ### Ask a question
 
@@ -290,11 +322,12 @@ follow malicious instructions in a passage. The prompt treats passages as data
 and asks for evidence-based answers; semantic grounding evaluation and broader
 prompt-injection defenses remain future quality work.
 
-Tests exercise both adapters using HTTPX mock transports, including their actual
+Tests exercise all three adapters using HTTPX mock transports, including their actual
 request/response serialization, timeout and refusal handling, and `/ask` citation
 resolution. This does not verify hosted-model access or local-model quality. A
-live answer requires your API credentials or a running Ollama model; neither is
-configured in the initial development environment.
+live answer requires a running Ollama model, or credentials and model access for
+the selected remote provider. The initial development environment has neither
+a running local LLM nor configured hosted generation credentials.
 
 ## Development environment
 
@@ -369,10 +402,11 @@ src/agentic_rag_assistant/
     answers.py              # Ask endpoint and dependency wiring
     answering.py            # Provider contract, evidence flow, citation validation
     llm/
-        factory.py          # Selects OpenAI or Ollama from settings
+        factory.py          # Selects local or remote LLM adapters from settings
         common.py           # HTTP transport and structured-output validation
         openai.py           # OpenAI Responses API adapter
         ollama.py           # Ollama chat API adapter
+        huggingface.py      # Remote Hugging Face Inference Providers adapter
     ingestion.py            # Text/PDF parsing and chunk preparation
     chunking.py             # Overlapping text windows with source offsets
     models.py               # Typed document, chunk, and search responses
@@ -414,7 +448,7 @@ requirements.lock          # Exact runtime and test dependency versions
   supports the current Starlette/FastAPI test client, and pytest runs the test
   ([Starlette test-client documentation](https://starlette.dev/testclient/)). Test
   tools belong in the `dev` extra rather than runtime dependencies.
-- HTTPX provides runtime HTTP clients for both LLM adapters and mock transports
+- HTTPX provides runtime HTTP clients for the LLM adapters and mock transports
   for provider tests. It is a distinct package from the HTTPX2 test-client dependency.
 - `python-multipart` handles file-upload form data; `pypdf` extracts PDF text.
   Plain text parsing and chunking use Python's standard library. FastEmbed runs

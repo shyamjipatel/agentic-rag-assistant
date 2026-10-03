@@ -173,14 +173,14 @@ def test_retrieval_failures_do_not_call_the_model(answer_client, failure, status
 def test_unconfigured_provider_is_an_actionable_service_error(answer_client):
     client, service, _, _ = answer_client
     service.provider = create_llm_provider(Settings(
-        _env_file=None, llm_provider=None, llm_model=None,
+        _env_file=None, llm_provider="huggingface", llm_model=None,
     ))
     response = client.post("/ask", json={"question": "Question?"})
     assert response.status_code == 503
-    assert "LLM_PROVIDER and LLM_MODEL" in response.json()["detail"]
+    assert "LLM_MODEL" in response.json()["detail"]
 
 
-@pytest.mark.parametrize("provider_name", ["openai", "ollama"])
+@pytest.mark.parametrize("provider_name", ["openai", "ollama", "huggingface"])
 def test_switching_adapters_preserves_the_http_contract_and_citations(answer_client, provider_name):
     client, service, _, _ = answer_client
     calls = []
@@ -193,6 +193,10 @@ def test_switching_adapters_preserves_the_http_contract_and_citations(answer_cli
                 {"type": "message", "role": "assistant", "status": "completed",
                  "content": [{"type": "output_text", "text": content}]},
             ]}
+        elif provider_name == "huggingface":
+            data = {"choices": [{"finish_reason": "stop", "message": {
+                "role": "assistant", "content": content,
+            }}]}
         else:
             data = {"done": True, "done_reason": "stop",
                     "message": {"role": "assistant", "content": content}}
@@ -200,7 +204,8 @@ def test_switching_adapters_preserves_the_http_contract_and_citations(answer_cli
 
     service.provider = create_llm_provider(
         Settings(_env_file=None, llm_provider=provider_name,
-                 llm_model="chosen-model", openai_api_key="test-only-key"),
+                 llm_model="chosen-model", openai_api_key="test-only-key",
+                 hf_token="test-only-hf-token"),
         transport=httpx.MockTransport(handle),
     )
     response = client.post("/ask", json={"question": "How much leave?"})
