@@ -10,8 +10,15 @@ readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "fastapi>=0.142.2,<0.143",
+    "fastembed>=0.8.1,<0.9",
+    "pgvector>=0.5,<0.6",
+    "psycopg[binary]>=3.3.6,<3.4",
+    "pydantic>=2.13.5,<3",
+    "pydantic-settings>=2.15,<3",
     "pypdf>=6.19,<7",
     "python-multipart>=0.0.32,<0.1",
+    "tokenizers>=0.23.2,<0.24",
+    "truststore>=0.10.4,<0.11",
     "uvicorn>=0.54.0,<0.55",
 ]
 
@@ -27,3 +34,6 @@ packages = ["src/agentic_rag_assistant"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--import-mode=importlib"
+markers = [
+    "integration: requires a dedicated PostgreSQL test database",
+]
