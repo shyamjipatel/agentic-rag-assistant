@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f5f9">
+  <meta name="description" content="Ask questions across your documents, with saved conversations and verifiable sources.">
+  <title>Agentic · Document workspace</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+  <script type="module" src="/static/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#question">Skip to message</a>
+  <svg class="icon-definitions" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6 3V6a2 2 0 0 1 2-2Z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z M14 3v6h6M8 13h8M8 17h5"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+    <symbol id="i-library" viewBox="0 0 24 24"><path d="M4 4v16M9 4v16M14 4v16m4-16 3 16"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="m15 4 5 5M4 20l5-1L20 8a2 2 0 0 0-4-4L5 15Z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></symbol>
+    <symbol id="i-calc" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M14 11h2M8 15h2M14 15h2M8 18h2M14 18h2"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.8 6.2L21 12l-6.2 2.8L12 21l-2.8-6.2L3 12l6.2-2.8Z"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M15 9V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h4"/></symbol>
+  </svg>
+  <div class="app-shell">
+    <button id="sidebar-backdrop" class="panel-backdrop" aria-label="Close conversation sidebar" hidden></button>
+    <aside class="sidebar" id="sidebar" aria-label="Conversations">
+      <a class="brand" href="/" aria-label="Agentic workspace home">
+        <span class="brand-mark"><svg class="icon"><use href="#i-spark"/></svg></span>
+        <span>agentic<span class="brand-dot">.</span></span>
+      </a>
+      <div class="workspace-label"><span class="workspace-avatar">W</span><span>Your workspace<small>Document intelligence</small></span></div>
+      <button id="new-chat" class="button button-primary new-chat"><svg class="icon"><use href="#i-plus"/></svg>New conversation</button>
+      <label class="search-input"><svg class="icon"><use href="#i-search"/></svg><input id="session-search" type="search" placeholder="Find a conversation" aria-label="Filter loaded conversations"></label>
+      <div class="section-label"><span>CONVERSATIONS</span><span id="session-count"></span></div>
+      <nav id="session-list" class="session-list" aria-label="Saved conversations"><p class="muted sidebar-note">Loading conversations…</p></nav>
+      <button id="more-sessions" class="text-button load-more" hidden>Load more conversations</button>
+      <div id="sidebar-error" class="inline-error" hidden><span></span><button id="retry-sessions" class="text-button">Retry</button></div>
+      <div class="sidebar-footer"><span class="connection-dot" id="connection-dot"></span><span id="connection-label">Connecting to workspace</span><a href="/docs" target="_blank" rel="noopener" aria-label="Open API documentation">API ↗</a></div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <button id="sidebar-toggle" class="icon-button mobile-only" aria-label="Open conversation sidebar" aria-expanded="false"><svg class="icon"><use href="#i-menu"/></svg></button>
+        <div class="breadcrumb"><span>Workspace</span><svg class="icon"><use href="#i-chevron"/></svg><span>Chat</span></div>
+        <button id="library-toggle" class="button button-quiet" aria-expanded="true" aria-controls="library"><svg class="icon"><use href="#i-library"/></svg>Document library<span id="document-count" class="count-badge">0</span></button>
+      </header>
+      <div class="workspace-body">
+        <section class="chat-panel" aria-label="Chat">
+          <div class="chat-heading"><div><span class="eyebrow">YOUR CONVERSATION</span><h1 id="chat-title">New conversation</h1></div><span class="saved-indicator" id="saved-indicator"><svg class="icon"><use href="#i-check"/></svg>Saved in your workspace</span></div>
+          <div class="messages-scroll" id="messages-scroll">
+            <button id="older-turns" class="text-button older-turns" hidden>Load earlier messages</button>
+            <div id="empty-state" class="empty-state">
+              <div class="welcome-art" aria-hidden="true"><div class="art-card art-back"></div><div class="art-card art-front"><svg class="icon"><use href="#i-file"/></svg><span></span><span></span><span></span></div><div class="art-spark"><svg class="icon"><use href="#i-spark"/></svg></div></div>
+              <span class="welcome-kicker">YOUR DOCUMENTS. A CLEARER PICTURE.</span>
+              <h2>Knowledge, a conversation away.</h2>
+              <p>Bring your documents. Ask a question.<br>Get answers you can trace back to the source.</p>
+              <div class="suggestions">
+                <button class="suggestion" data-prompt="Summarize the key policies in my documents."><svg class="icon"><use href="#i-file"/></svg><strong>Understand the essentials</strong><span>Explore the key points in your documents</span><svg class="icon suggestion-arrow"><use href="#i-chevron"/></svg></button>
+                <button class="suggestion" data-prompt="What are the eligibility requirements described in my documents?"><svg class="icon"><use href="#i-search"/></svg><strong>Find a specific detail</strong><span>Look up a policy, limit, or requirement</span><svg class="icon suggestion-arrow"><use href="#i-chevron"/></svg></button>
+                <button class="suggestion" data-prompt="How many annual leave days would I receive over three years?" data-tools="true"><svg class="icon"><use href="#i-calc"/></svg><strong>Calculate with evidence</strong><span>Work with numbers from your sources</span><svg class="icon suggestion-arrow"><use href="#i-chevron"/></svg></button>
+              </div>
+              <div class="empty-upload"><svg class="icon"><use href="#i-upload"/></svg><span>Start with a document</span><button class="text-button" data-upload>Upload TXT or PDF <span aria-hidden="true">↗</span></button></div>
+            </div>
+            <div id="messages" class="messages" aria-live="polite" aria-relevant="additions"></div>
+            <div id="history-error" class="history-error" hidden><p></p><button id="retry-history" class="button button-quiet">Reload conversation</button></div>
+          </div>
+          <div class="composer-area">
+            <div id="request-error" class="request-error" role="alert" hidden><span></span><button id="retry-question" class="text-button" hidden>Retry question</button></div>
+            <form id="chat-form" class="composer">
+              <label for="question" class="sr-only">Message</label>
+              <textarea id="question" rows="1" maxlength="2000" placeholder="Ask anything about your documents…" required></textarea>
+              <div class="composer-toolbar">
+                <button type="button" class="icon-button attach-button" data-upload aria-label="Upload documents"><svg class="icon"><use href="#i-plus"/></svg></button>
+                <label class="scope-control"><svg class="icon"><use href="#i-library"/></svg><span class="sr-only">Search scope</span><select id="document-scope"><option value="">All documents</option></select></label>
+                <label class="tool-toggle" title="Allow a calculator to use numbers from retrieved sources"><input id="use-tools" type="checkbox"><svg class="icon"><use href="#i-calc"/></svg><span>Calculator</span></label>
+                <span id="character-count" class="character-count" hidden></span>
+                <button type="submit" id="send" class="send-button" aria-label="Send message" disabled><svg class="icon"><use href="#i-arrow"/></svg></button>
+              </div>
+            </form>
+            <p class="composer-hint"><span class="keyboard-hint">Enter to send · Shift + Enter for a new line</span><span>Check the sources. Context matters.</span></p>
+          </div>
+        </section>
+
+        <aside id="library" class="library-panel" aria-label="Document library">
+          <div class="library-heading"><div><h2>Document library</h2><p>Your shared knowledge base</p></div><button id="library-close" class="icon-button" aria-label="Close document library"><svg class="icon"><use href="#i-close"/></svg></button></div>
+          <button id="upload-trigger" class="upload-card" data-upload><span class="upload-icon"><svg class="icon"><use href="#i-upload"/></svg></span><strong>Add your documents</strong><span>TXT or text-based PDF · Up to 5 MiB</span><span class="upload-card-action">Upload files <svg class="icon"><use href="#i-plus"/></svg></span></button>
+          <div class="section-label"><span>INDEXED DOCUMENTS</span><button id="refresh-library" class="text-button" aria-label="Refresh document library">Refresh</button></div>
+          <div id="document-list" class="document-list"><p class="muted">Loading library…</p></div>
+          <button id="more-documents" class="text-button load-more" hidden>Load more documents</button>
+          <div id="library-error" class="inline-error" hidden><span></span></div>
+          <div class="library-info"><svg class="icon"><use href="#i-spark"/></svg><strong>Grounded in your documents</strong><p>Files are indexed for retrieval, so answers can include source passages. Your documents are available in every conversation.</p></div>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="upload-dialog" class="modal upload-modal" aria-labelledby="upload-title">
+    <div class="modal-heading"><div><span class="eyebrow">BUILD YOUR KNOWLEDGE BASE</span><h2 id="upload-title">Add documents</h2></div><button id="upload-close" class="icon-button" aria-label="Close upload dialog"><svg class="icon"><use href="#i-close"/></svg></button></div>
+    <p class="modal-intro">Upload files to make them searchable in your conversations.</p>
+    <label id="drop-zone" class="drop-zone" tabindex="0"><input id="file-input" class="sr-only" type="file" accept=".txt,.pdf,text/plain,application/pdf" multiple><span class="upload-icon"><svg class="icon"><use href="#i-upload"/></svg></span><strong>Drop your files here</strong><span>or <span class="browse-label">browse files</span></span><small>TXT and text-based PDF · 5 MiB per file · 100 PDF pages</small></label>
+    <div id="upload-queue" class="upload-queue" aria-live="polite"></div>
+    <p class="upload-note">Text is parsed, split into passages, and indexed. This prepares the knowledge base; it does not train or fine-tune the language model. Scanned PDFs need OCR first.</p>
+    <div class="modal-footer"><span id="upload-summary">Choose files to get started</span><button id="upload-done" class="button button-primary">Done</button></div>
+  </dialog>
+
+  <dialog id="session-dialog" class="modal session-modal" aria-labelledby="session-dialog-title">
+    <form id="session-form"><div class="modal-heading"><h2 id="session-dialog-title">Rename conversation</h2><button type="button" id="session-dialog-close" class="icon-button" aria-label="Close dialog"><svg class="icon"><use href="#i-close"/></svg></button></div><p id="session-dialog-description" class="modal-intro"></p><label id="rename-label" class="rename-label">Conversation name<input id="rename-input" maxlength="120" required></label><p id="session-dialog-error" class="inline-error" role="alert" hidden></p><div class="modal-footer"><button type="button" id="session-dialog-cancel" class="button button-quiet">Cancel</button><button type="submit" id="session-dialog-submit" class="button button-primary">Save name</button></div></form>
+  </dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <noscript><div class="noscript">Enable JavaScript to use the workspace. The <a href="/docs">API documentation</a> remains available.</div></noscript>
+</body>
+</html>
