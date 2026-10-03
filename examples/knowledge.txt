@@ -1,0 +1,11 @@
+Agentic RAG Assistant: Project Notes
+
+FastAPI is the HTTP entry point for the assistant. The health endpoint reports whether the API is responding. The document ingestion endpoint accepts a file and returns extracted text chunks with source metadata.
+
+Document ingestion has three steps: upload, parse, and chunk. UTF-8 text files are decoded directly. PDF files are parsed page by page so that later citations can identify the original page. PDFs containing only scanned images require OCR, which is outside the current milestone.
+
+Chunking divides extracted text into smaller pieces before embeddings are introduced. The initial strategy uses windows of 1,000 characters and an overlap of 200 characters. Overlap keeps some context from the previous window when a passage crosses a chunk boundary. PDF chunks stay within their original page.
+
+Source metadata connects a chunk to its document. The document identifier is derived from the uploaded bytes. Each chunk has a stable identifier, its position in the document's chunk sequence, a PDF page number when available, and character offsets within the extracted source text. These offsets count characters rather than bytes or model tokens.
+
+Later milestones will add embeddings, vector retrieval, answer generation with citations, and LangGraph tool orchestration. This milestone returns the parsed chunks for inspection and does not persist documents or make calls to an LLM.
