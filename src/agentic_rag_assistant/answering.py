@@ -52,7 +52,7 @@ class GeneratedAnswer(BaseModel):
     statements: list[SupportedStatement] = Field(max_length=6)
 
 
-class AnswerGenerator(Protocol):
+class LLMProvider(Protocol):
     def generate(self, question: str, sources: list[SearchHit]) -> GeneratedAnswer: ...
 
 
@@ -113,9 +113,9 @@ def resolve_answer(
 
 
 class AnswerService:
-    def __init__(self, retriever: PassageRetriever, generator: AnswerGenerator):
+    def __init__(self, retriever: PassageRetriever, provider: LLMProvider):
         self.retriever = retriever
-        self.generator = generator
+        self.provider = provider
 
     def ask(
         self, question: str, *, top_k: int = MAX_ANSWER_SOURCES,
@@ -130,5 +130,5 @@ class AnswerService:
             return AnswerResponse(question, INSUFFICIENT_EVIDENCE, False, [])
         if len(sources) > top_k:
             raise ValueError("The retriever exceeded the requested evidence limit.")
-        generated = self.generator.generate(question, sources)
+        generated = self.provider.generate(question, sources)
         return resolve_answer(question, generated, sources)
