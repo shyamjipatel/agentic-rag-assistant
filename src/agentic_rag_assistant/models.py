@@ -22,3 +22,26 @@ class IngestedDocument:
     skipped_pages: list[int]
     chunk_count: int
     chunks: list[DocumentChunk]
+
+
+@dataclass(frozen=True)
+class IndexedDocument:
+    document_id: str
+    filename: str
+    chunk_count: int
+    embedding_model: str
+    embedding_dimensions: int
+
+
+@dataclass(frozen=True)
+class SearchHit:
+    document_id: str
+    filename: str
+    score: float
+    chunk: DocumentChunk
+
+
+@dataclass(frozen=True)
+class SearchResponse:
+    query: str
+    results: list[SearchHit]
