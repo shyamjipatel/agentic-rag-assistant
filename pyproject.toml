@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentic-rag-assistant"
+version = "0.1.0"
+description = "An incrementally built API for an agentic RAG assistant."
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "fastapi>=0.142.2,<0.143",
+    "uvicorn>=0.54.0,<0.55",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx2>=2.13.1,<3",
+    "pytest>=9.1.1,<10",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentic_rag_assistant"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib"
