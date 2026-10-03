@@ -164,7 +164,8 @@ unmatched filter returns an empty list.
 
 `POST /ask` retrieves evidence, asks the configured LLM for a structured answer,
 and resolves source citations against the retrieved chunks. Milestone 5 adds
-LangGraph orchestration; tool calling and conversation memory follow later.
+LangGraph orchestration, and Milestone 6 adds opt-in calculator tool calling.
+Conversation memory follows later.
 
 The RAG service depends on an `LLMProvider` protocol, not a concrete provider.
 Only the adapter factory selects Ollama, remote Hugging Face, or OpenAI:
@@ -294,7 +295,8 @@ response, with the long document/chunk details omitted, is:
   "answered": true,
   "citations": [
     {"source_id": 1, "filename": "leave-policy.txt", "score": 0.736}
-  ]
+  ],
+  "tool_results": []
 }
 ```
 
@@ -304,6 +306,7 @@ local to the answer. Only cited sources appear in `citations`.
 
 The request accepts a trimmed `question` of 1–2,000 characters, `top_k` of 1–5
 (default 5), optional `document_id`, and optional `min_score` between -1 and 1.
+Milestone 6 adds `use_tools`, a JSON boolean that defaults to `false`.
 This smaller evidence limit keeps the initial generation context bounded; the
 existing `/search` endpoint still accepts up to 20 results. Without a score
 threshold, nearest passages may be unrelated, so the model is instructed to
@@ -372,11 +375,12 @@ invocation starts with fresh state; there is no checkpointer or conversation
 history. Tests cover both graph branches, repeated and concurrent invocations,
 evidence limits, and failure propagation. Failed nodes propagate their exceptions
 to the existing HTTP boundary; there are no graph retries or provider fallbacks.
-Each invocation performs one retrieval and at most one generation request.
+Without tool mode, each invocation performs one retrieval and at most one
+generation request. Milestone 6 adds a separate tool-selection request when enabled.
 
 This is the orchestration foundation for the agent: its route is currently
-determined by application code. Model-driven tool selection is Phase 6, and
-conversation memory is Phase 7. Introducing them separately keeps each new
+determined by application code. Phase 6 below introduces model-driven tool selection,
+and conversation memory is Phase 7. Introducing them separately keeps each new
 behavior understandable and testable
 ([Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api),
 [Workflows and agents](https://docs.langchain.com/oss/python/langgraph/workflows-agents)).
@@ -386,6 +390,90 @@ install the updated dependencies with
 `python -m pip install -c requirements.lock -e '.[dev]'` and restart the API.
 The graph change does not require a database migration, model download, or
 document reindexing.
+
+## Milestone 6: Calculator tool calling
+
+Enable tool mode on `/ask` to let the model choose whether it needs one calculator
+call. Retrieval still runs first, with the same document and similarity filters.
+The model receives a native function definition, rather than a request to write
+executable Python. The server validates the requested call and performs the arithmetic.
+
+Restart the API after this change, then try:
+
+```sh
+curl --fail-with-body http://127.0.0.1:8000/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question": "Using the annual leave policy, calculate the total paid annual leave days for 3 years at the stated yearly rate.", "top_k": 2, "use_tools": true}'
+```
+
+With the sample leave policy, the calculator can multiply `24` by `3` to get
+`72`. The answer cites the annual rate; the multi-year total is a calculation,
+not a promise that the policy permits accumulating that leave balance.
+
+```mermaid
+flowchart TD
+    Retrieve[Retrieve passages] --> Evidence{Any passages?}
+    Evidence -->|No| Abstain[Insufficient evidence]
+    Evidence -->|Yes, tools disabled| Generate[Generate structured answer]
+    Evidence -->|Yes, tools enabled| Choose[Model chooses a tool]
+    Choose -->|No tool needed| Generate
+    Choose -->|Calculator requested| Execute[Validate arguments and calculate]
+    Execute -->|Native tool result| Generate
+    Generate --> Validate[Validate citations and return answer]
+```
+
+The optional request field is `use_tools: true`. Omitting it keeps the direct
+RAG path. Every answer response now includes an additive `tool_results` list,
+empty when no tool was executed. Each executed calculation exposes the actual
+server-computed operation, operands, value, and supporting source IDs:
+
+```json
+{
+  "tool_results": [
+    {
+      "tool_name": "calculator",
+      "operation": "multiply",
+      "left": "24",
+      "right": "3",
+      "value": "72",
+      "source_ids": [1]
+    }
+  ]
+}
+```
+
+The model chooses the tool; `tools.py` validates and executes it. Its allowlist
+contains only `calculator`, with `add`, `subtract`, `multiply`, and `divide`.
+Operands are decimal strings limited to 12 integer and 6 fractional digits.
+Python `Decimal` uses 28 significant digits; results requiring more precision
+are rounded. Arbitrary expressions, code, unknown tools, malformed arguments,
+division by zero, and source IDs outside the retrieved evidence are rejected.
+
+Each invocation performs at most one calculation and two LLM requests: tool
+selection, then structured answer generation. The final request offers no tools,
+and an additional tool call is rejected. Empty retrieval skips both LLM requests.
+This bounded round trip introduces tool calling incrementally; multi-step tool
+loops and external API tools can build on it later.
+
+All adapters implement the same provider interface. Hugging Face uses native chat
+`tool_calls` and a correlated `tool_call_id`; Ollama uses its chat tool messages;
+OpenAI uses Responses function-call items and `function_call_output`. Its reasoning
+items are replayed with the call output while keeping `store=false`.
+See [Hugging Face function calling](https://huggingface.co/docs/inference-providers/guides/function-calling),
+[Ollama tool calling](https://docs.ollama.com/capabilities/tool-calling), and
+[official OpenAI documentation](https://developers.openai.com/api/docs/guides/function-calling).
+The selected model/backend must support native tool calling as well as structured
+answers. Automatic provider fallbacks and retries remain disabled.
+
+The backend verifies that calculator source IDs exist and requires a supported
+final answer to cite all of them. It does not prove that the model extracted the
+right operands, applied the right policy conditions, or described the result
+faithfully. The visible tool results make the computation inspectable; semantic
+grounding evaluation remains future quality work.
+
+Tests exercise decimal arithmetic, native tool/result round trips for all three
+providers, rejected calls, bounded execution, failure mapping, and request
+isolation. Conversation memory is still the next milestone.
 
 ## Development environment
 
@@ -459,10 +547,12 @@ src/agentic_rag_assistant/
     search.py               # Validated semantic-search HTTP endpoint
     answers.py              # Ask endpoint and dependency wiring
     agent.py                # LangGraph state, nodes, routing, request isolation
+    tools.py                # Calculator schema, validation, decimal execution
     answering.py            # Provider contracts, evidence prompt, citation validation
     llm/
         factory.py          # Selects local or remote LLM adapters from settings
         common.py           # HTTP transport and structured-output validation
+        tool_support.py     # Native tool messages and provider-neutral prompts
         openai.py           # OpenAI Responses API adapter
         ollama.py           # Ollama chat API adapter
         huggingface.py      # Remote Hugging Face Inference Providers adapter
@@ -487,6 +577,8 @@ tests/
     test_vector_store.py    # Dedicated-database integration tests
     test_answering.py
     test_agent.py           # Real graph routing, isolation, and failure boundaries
+    test_tools.py           # Decimal arithmetic and invalid calculator inputs
+    test_tool_calling.py    # Native tool calling through adapters, graph, and HTTP
     test_llm_providers.py
     test_answers_api.py
 examples/

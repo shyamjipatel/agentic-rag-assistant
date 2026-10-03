@@ -31,6 +31,10 @@ class AskRequest(BaseModel):
     top_k: int = Field(default=MAX_ANSWER_SOURCES, ge=1, le=MAX_ANSWER_SOURCES)
     document_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     min_score: float | None = Field(default=None, ge=-1, le=1)
+    use_tools: bool = Field(
+        default=False, strict=True,
+        description="Let the model choose one calculator call using retrieved evidence.",
+    )
 
 
 @lru_cache
@@ -56,6 +60,7 @@ async def ask_question(
         return await run_in_threadpool(
             service.ask, body.question, top_k=body.top_k,
             document_id=body.document_id, min_score=body.min_score,
+            use_tools=body.use_tools,
         )
     except EmbeddingInputError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

@@ -13,6 +13,7 @@ from agentic_rag_assistant.answering import (
     SupportedStatement,
 )
 from agentic_rag_assistant.models import DocumentChunk, SearchHit
+from agentic_rag_assistant.tools import ToolSelection, parse_calculator_call
 
 
 def source(name: str) -> SearchHit:
@@ -101,6 +102,44 @@ def test_concurrent_requests_keep_their_own_questions_and_sources():
         assert result.question == question
         assert result.answer == f"Answer for {question}. [1]"
         assert result.citations[0].filename == f"{question}.txt"
+
+
+def test_concurrent_tool_and_plain_requests_keep_calculations_isolated():
+    barrier = Barrier(2)
+
+    class ConcurrentRetriever:
+        def search(self, query, **options):
+            barrier.wait(timeout=5)
+            return [source(query)]
+
+    class MixedProvider:
+        def select_tool(self, question, sources):
+            assert question == "calculate"
+            return ToolSelection(parse_calculator_call("call-1", "calculator", {
+                "operation": "multiply", "left": "24", "right": "3", "source_ids": [1],
+            }), [])
+
+        def generate(self, question, sources, *, tool_selection=None, tool_result=None):
+            assert sources[0].filename == f"{question}.txt"
+            if question == "calculate":
+                assert tool_selection.call.name == "calculator"
+                assert tool_result.value == "72"
+            else:
+                assert tool_selection is None and tool_result is None
+            return GeneratedAnswer(
+                supported=True,
+                statements=[SupportedStatement(text=f"Answer for {question}.", source_ids=[1])],
+            )
+
+    agent = RAGAgent(ConcurrentRetriever(), MixedProvider())
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        calculated = executor.submit(agent.ask, "calculate", use_tools=True)
+        plain = executor.submit(agent.ask, "plain")
+        tool_answer, plain_answer = calculated.result(), plain.result()
+    assert tool_answer.tool_results[0].value == "72"
+    assert tool_answer.citations[0].filename == "calculate.txt"
+    assert plain_answer.tool_results == []
+    assert plain_answer.citations[0].filename == "plain.txt"
 
 
 @pytest.mark.parametrize("top_k", [0, 6])
