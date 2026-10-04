@@ -40,3 +40,33 @@ def test_pdf_page_and_text_limits_are_enforced(pdf_factory, monkeypatch) -> None
 def test_truncated_pdf_returns_a_document_error() -> None:
     with pytest.raises(InvalidDocumentError, match="malformed"):
         ingest_document(filename="broken.pdf", content=b"%PDF-1.7\ntruncated")
+
+
+@pytest.mark.parametrize("filename", ["bad\x00.txt", "x" * 256 + ".pdf"])
+def test_invalid_source_filename_is_rejected_before_storage(filename):
+    with pytest.raises(InvalidDocumentError, match="Filenames"):
+        ingest_document(filename=filename, content=b"Source text")
+
+
+@pytest.mark.parametrize("failure", [ValueError, KeyError, TypeError, IndexError, RecursionError])
+def test_malformed_pdf_parser_failures_become_actionable_document_errors(monkeypatch, failure):
+    def invalid_reader(content):
+        raise failure("Private parser details")
+
+    monkeypatch.setattr("agentic_rag_assistant.ingestion.PdfReader", invalid_reader)
+    with pytest.raises(InvalidDocumentError, match="malformed"):
+        ingest_document(filename="broken.pdf", content=b"%PDF-1.7\nparser failure")
+
+
+def test_pdf_null_characters_are_rejected_before_jsonb_storage(monkeypatch):
+    class Page:
+        def extract_text(self):
+            return "Invalid\x00text"
+
+    class Reader:
+        is_encrypted = False
+        pages = [Page()]
+
+    monkeypatch.setattr("agentic_rag_assistant.ingestion.PdfReader", lambda _: Reader())
+    with pytest.raises(InvalidDocumentError, match="null characters"):
+        ingest_document(filename="broken.pdf", content=b"%PDF-1.7\nnull text")

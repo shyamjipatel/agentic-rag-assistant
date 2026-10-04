@@ -40,12 +40,16 @@ def _parse_pdf(content: bytes) -> list[tuple[int | None, str]]:
         character_count = 0
         for number, page in enumerate(reader.pages, start=1):
             text = page.extract_text() or ""
+            if "\x00" in text:
+                raise InvalidDocumentError("PDF text must not contain null characters.")
             character_count += len(text)
             if character_count > MAX_TEXT_CHARACTERS:
                 raise DocumentLimitError("Extracted text exceeds the character limit.")
             pages.append((number, text))
         return pages
-    except PyPdfError as exc:
+    except (InvalidDocumentError, DocumentLimitError):
+        raise
+    except (PyPdfError, ValueError, KeyError, TypeError, IndexError, RecursionError) as exc:
         raise InvalidDocumentError("The PDF is malformed or cannot be read.") from exc
 
 
@@ -53,6 +57,8 @@ def ingest_document(*, filename: str, content: bytes) -> IngestedDocument:
     """Parse UTF-8 text or PDF pages and assign stable source identifiers."""
     # The client filename is metadata, never a filesystem destination.
     source_name = PurePosixPath(filename.replace("\\", "/")).name
+    if "\x00" in source_name or len(source_name) > 255:
+        raise InvalidDocumentError("Filenames must be at most 255 characters without null bytes.")
     extension = PurePosixPath(source_name).suffix.lower()
     if extension not in {".txt", ".pdf"}:
         raise UnsupportedDocumentError("Supported document formats are .txt and .pdf.")

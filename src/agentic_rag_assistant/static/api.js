@@ -1,9 +1,10 @@
 /** Same-origin JSON API. Credentials and provider selection stay on the server. */
 export class ApiError extends Error {
-  constructor(message, status = 0) {
+  constructor(message, status = 0, requestId = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.requestId = requestId;
   }
 }
 
@@ -26,7 +27,8 @@ export async function request(path, { method = "GET", body } = {}) {
     if (Array.isArray(data.detail)) {
       detail = data.detail.map(item => `${item.loc?.slice(1).join(".") || "Input"}: ${item.msg}`).join("; ");
     }
-    throw new ApiError(detail, response.status);
+    const requestId = response.headers.get("X-Request-ID");
+    throw new ApiError(`${detail}${requestId ? ` (Request ${requestId})` : ""}`, response.status, requestId);
   }
   return data;
 }
