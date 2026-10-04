@@ -19,3 +19,7 @@ __pycache__/
 .env.*
 !.env.example
 !.env.*.example
+
+# Local files generated in this project workspace
+/.DS_Store
+/docs/~$*.docx
