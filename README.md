@@ -2,27 +2,22 @@
 
 **A document intelligence workspace with cited answers, tool-assisted reasoning, and persistent conversations.**
 
-![Saved conversations with source citations, a calculator result, and the shared document library](docs/images/workspace-chat.png)
+**Python 3.13 · FastAPI · LangGraph · FastEmbed · PostgreSQL · pgvector · Docker**
 
-**Python · FastAPI · LangGraph · pgvector · Docker**
+![Saved conversations with source citations, a calculator result, and the shared document library](docs/images/workspace-chat.png)
 
 *Example: the assistant retrieves a fictional leave policy, answers with a source
 citation, and uses the calculator to compute `24 × 3 = 72` for a follow-up question.*
 
-## What this project demonstrates
+### What this demonstrates
 
-**RAG & semantic retrieval · AI agent orchestration · Tool calling · Citation grounding ·
-Conversation memory · Pluggable LLM providers · Production API design · Docker & CI workflows**
-
-Upload policies, handbooks, or reference documents and ask questions in a responsive
-chat interface. The assistant retrieves relevant passages, generates an answer
-through your configured LLM, and attaches source references you can inspect.
-Follow-up questions retain conversation context, while a bounded calculator can
-perform arithmetic using retrieved evidence.
-
-Built as an AI/backend portfolio project, the application brings together a
-FastAPI API, a LangGraph workflow, local embeddings, PostgreSQL with pgvector,
-and a browser workspace in one containerized system.
+- Retrieval-Augmented Generation with grounded citations
+- LangGraph-based agent orchestration
+- AI tool calling with retrieved evidence
+- Persistent conversational memory
+- Local embeddings with pgvector semantic search
+- Pluggable Ollama, Hugging Face, and OpenAI providers
+- Production-oriented FastAPI, Docker, testing, and continuous integration
 
 [Problem](#problem) · [Solution](#solution) · [Architecture](#architecture) ·
 [Features](#features) · [Quick start](#quick-start) · [Demo](#demo-and-screenshots) ·
