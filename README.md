@@ -431,6 +431,7 @@ the current behavior explicit and identify extension points for larger deploymen
 | [Development](docs/development.md) | Host setup, dependency management, tests, browser checks, and package verification |
 | [Operations](docs/operations.md) | Docker startup, configuration, readiness, TLS trust, storage, and troubleshooting |
 | [Demo](docs/demo.md) | Five-minute walkthrough, screenshots, and reproducible capture instructions |
+| [Technical owner handbook](docs/technical-owner-handbook.docx) | Detailed implementation walkthroughs, architectural tradeoffs, glossary, and 50 technical reviewer questions with answers; download as a Word document |
 | [Learning notes](docs/learning-notes.md) | Incremental project history and component explanations |
 
 ## License
