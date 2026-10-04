@@ -1,1 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" rx="12" fill="#7060cb"/><path d="m20 7 4 9 9 4-9 4-4 9-4-9-9-4 9-4Z" fill="white"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Agentic document insight</title>
+  <rect width="64" height="64" rx="17" fill="#7060cb"/>
+  <path d="M20 10h18l9 9v30a5 5 0 0 1-5 5H20a5 5 0 0 1-5-5V15a5 5 0 0 1 5-5Z" fill="#fff"/>
+  <path d="M38 10v9h9Z" fill="#ddd7f5"/>
+  <path d="m31 21 3.5 9.5L44 34l-9.5 3.5L31 47l-3.5-9.5L18 34l9.5-3.5Z" fill="#7060cb"/>
+</svg>
