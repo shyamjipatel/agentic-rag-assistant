@@ -14,15 +14,23 @@ and a browser workspace in one containerized system.
 
 **Python 3.13 · FastAPI · LangGraph · FastEmbed · PostgreSQL · pgvector · Docker**
 
-[Features](#features) · [Screenshots](#screenshots) · [Quick start](#quick-start) ·
-[Architecture](#architecture) · [API](#api-reference) · [Documentation](#documentation)
+[Problem](#problem) · [Solution](#solution) · [Architecture](#architecture) ·
+[Features](#features) · [Quick start](#quick-start) · [Demo](#demo-and-screenshots) ·
+[API](#api-reference) · [Documentation](#documentation)
 
 ![Saved conversations with source citations, a calculator result, and the shared document library](docs/images/workspace-chat.png)
 
 *Example: the assistant retrieves a fictional leave policy, answers with a source
 citation, and uses the calculator to compute `24 × 3 = 72` for a follow-up question.*
 
-## Overview
+## Problem
+
+Useful answers are often buried across policies, handbooks, and reference PDFs.
+Manual searching is slow, and a general-purpose chatbot may answer without access
+to the right document or a source you can check. Follow-up questions and arithmetic
+add another challenge: the answer needs context and verifiable calculations.
+
+## Solution
 
 The application supports a complete document-to-answer workflow:
 
@@ -36,6 +44,60 @@ Documents are indexed for retrieval; uploading does not train or fine-tune an LL
 The current application is a **shared workspace for trusted local use**. Documents
 are shared across conversations, while each session has its own persisted history.
 Authentication and per-user access controls are extension points for deployment.
+
+## Architecture
+
+```mermaid
+flowchart TB
+    UI[Browser workspace] --> API[FastAPI]
+
+    subgraph Ingestion[Document indexing]
+        PARSE[TXT/PDF extraction and chunking] --> EMBED[Local passage embeddings]
+    end
+    API --> PARSE
+    EMBED --> DB[(PostgreSQL + pgvector)]
+
+    subgraph Agent[LangGraph answer workflow]
+        MEMORY[Bounded context and question rewrite] --> RETRIEVE[Local query embedding and fresh retrieval]
+        RETRIEVE --> TOOL[Optional calculator]
+        TOOL --> ANSWER[Structured answer generation]
+        ANSWER --> CITE[Validate citations and resolve sources]
+    end
+    API --> MEMORY
+    RETRIEVE <--> DB
+    MEMORY -.-> PROVIDER["LLM provider interface<br/>Ollama · Hugging Face · OpenAI"]
+    TOOL -.-> PROVIDER
+    ANSWER -.-> PROVIDER
+    CITE --> SAVE[Save completed turn when a session is supplied]
+    SAVE --> DB
+    DB --> MEMORY
+    SAVE --> RESPONSE[Answer + citations + tool results]
+    RESPONSE --> UI
+```
+
+### Design decisions
+
+- **Separate boundaries:** HTTP routers handle validation/status codes; services
+  coordinate work; domain code handles parsing, evidence validation, and arithmetic;
+  adapters own SQL and provider protocols.
+- **Traceable evidence:** chunks retain stable IDs, page numbers, and character
+  offsets. The server resolves citation metadata from retrieved passages instead
+  of accepting invented source names from a model.
+- **Bounded execution:** the graph permits at most one calculator call. Decimal
+  arithmetic uses constrained operands and source references, without executing
+  model-generated code.
+- **Persistent, isolated conversation context:** PostgreSQL stores completed turns
+  as structured snapshots. Follow-up rewriting uses at most three recent turns,
+  then retrieves fresh evidence; historical answers do not become source evidence.
+- **Atomic writes:** document reindexing is transactional. Conversation saves use
+  revision checks; conflicting concurrent writes return 409 rather than losing a turn.
+- **Explicit model preparation:** embedding downloads occur during setup. Requests
+  load a prepared cache, keeping download failures outside normal request handling.
+- **One application origin:** FastAPI serves packaged HTML/CSS/JavaScript and the
+  API. Provider credentials stay on the server; no frontend build server is needed.
+
+The [architecture guide](docs/architecture.md) details graph branches, persistence,
+provider contracts, and the boundaries of citation validation.
 
 ## Features
 
@@ -53,48 +115,6 @@ Authentication and per-user access controls are extension points for deployment.
 | Browser workspace | Responsive chat, document library, upload progress, source inspection, and calculator controls |
 | Operational checks | Liveness, local-dependency readiness, request IDs, safe errors, and JSON request diagnostics |
 | Delivery and verification | Constrained dependencies, unit/API/database/browser checks, Docker, and a GitHub Actions workflow |
-
-## Screenshots
-
-These screenshots show the actual browser application, API, LangGraph workflow,
-and PostgreSQL storage. The capture harness uses deterministic embedding and LLM
-adapters so the demo is reproducible. They demonstrate application behavior;
-live-model answer quality requires separate evaluation. All sample documents are
-fictional.
-
-### Workspace and document library
-
-The desktop workspace places conversations, the chat composer, and the shared
-knowledge library in one interface. Users can start another conversation or
-upload a document directly from the workspace.
-
-![Desktop workspace with conversation controls, an empty chat, and the document library](docs/images/workspace-desktop.png)
-
-### TXT and PDF upload
-
-The upload dialog accepts multiple files and tracks each file through indexing.
-Successfully indexed documents appear in the library and become available to
-subsequent questions.
-
-![Upload dialog showing successfully indexed TXT and PDF documents](docs/images/workspace-upload.png)
-
-### Cited answers, calculator results, and saved conversations
-
-The opening screenshot shows two saved sessions, a document-scoped conversation,
-source cards, and a calculator result. Source markers/cards open the retrieved
-passages, letting users inspect the evidence behind an answer. Completed turns,
-including citations and tool results, remain available after refresh.
-
-### Mobile chat
-
-The layout adapts to smaller screens with a conversation drawer and document
-library controls. Answers, source cards, and calculator results remain accessible
-in the mobile conversation view.
-
-<img src="docs/images/workspace-mobile.png" alt="Mobile conversation showing cited answers, a calculator result, and the chat composer" width="390">
-
-See the [demo walkthrough](docs/demo.md) for a presentation script and instructions
-for reproducing the screenshots.
 
 ## Quick start
 
@@ -178,6 +198,48 @@ For development outside Docker, use the [Python environment setup](docs/developm
 The project currently requires Python 3.13; the dependency set was verified with
 Python 3.13.7 on macOS ARM64 and in the Linux ARM64 container.
 
+## Demo and screenshots
+
+These screenshots show the actual browser application, API, LangGraph workflow,
+and PostgreSQL storage. The capture harness uses deterministic embedding and LLM
+adapters so the demo is reproducible. They demonstrate application behavior;
+live-model answer quality requires separate evaluation. All sample documents are
+fictional.
+
+### Workspace and document library
+
+The desktop workspace places conversations, the chat composer, and the shared
+knowledge library in one interface. Users can start another conversation or
+upload a document directly from the workspace.
+
+![Desktop workspace with conversation controls, an empty chat, and the document library](docs/images/workspace-desktop.png)
+
+### TXT and PDF upload
+
+The upload dialog accepts multiple files and tracks each file through indexing.
+Successfully indexed documents appear in the library and become available to
+subsequent questions.
+
+![Upload dialog showing successfully indexed TXT and PDF documents](docs/images/workspace-upload.png)
+
+### Cited answers, calculator results, and saved conversations
+
+The opening screenshot shows two saved sessions, a document-scoped conversation,
+source cards, and a calculator result. Source markers/cards open the retrieved
+passages, letting users inspect the evidence behind an answer. Completed turns,
+including citations and tool results, remain available after refresh.
+
+### Mobile chat
+
+The layout adapts to smaller screens with a conversation drawer and document
+library controls. Answers, source cards, and calculator results remain accessible
+in the mobile conversation view.
+
+<img src="docs/images/workspace-mobile.png" alt="Mobile conversation showing cited answers, a calculator result, and the chat composer" width="390">
+
+See the [demo walkthrough](docs/demo.md) for a presentation script and instructions
+for reproducing the screenshots.
+
 ## LLM provider configuration
 
 The graph depends on a common provider interface. Adapter selection happens in a
@@ -216,60 +278,6 @@ Raw uploads are not retained; extracted text and embeddings remain in PostgreSQL
 
 See [.env.example](.env.example) and the full
 [configuration reference](docs/operations.md#configuration).
-
-## Architecture
-
-```mermaid
-flowchart TB
-    UI[Browser workspace] --> API[FastAPI]
-
-    subgraph Ingestion[Document indexing]
-        PARSE[TXT/PDF extraction and chunking] --> EMBED[Local passage embeddings]
-    end
-    API --> PARSE
-    EMBED --> DB[(PostgreSQL + pgvector)]
-
-    subgraph Agent[LangGraph answer workflow]
-        MEMORY[Bounded context and question rewrite] --> RETRIEVE[Local query embedding and fresh retrieval]
-        RETRIEVE --> TOOL[Optional calculator]
-        TOOL --> ANSWER[Structured answer generation]
-        ANSWER --> CITE[Validate citations and resolve sources]
-    end
-    API --> MEMORY
-    RETRIEVE <--> DB
-    MEMORY -.-> PROVIDER["LLM provider interface<br/>Ollama · Hugging Face · OpenAI"]
-    TOOL -.-> PROVIDER
-    ANSWER -.-> PROVIDER
-    CITE --> SAVE[Save completed turn when a session is supplied]
-    SAVE --> DB
-    DB --> MEMORY
-    SAVE --> RESPONSE[Answer + citations + tool results]
-    RESPONSE --> UI
-```
-
-### Design decisions
-
-- **Separate boundaries:** HTTP routers handle validation/status codes; services
-  coordinate work; domain code handles parsing, evidence validation, and arithmetic;
-  adapters own SQL and provider protocols.
-- **Traceable evidence:** chunks retain stable IDs, page numbers, and character
-  offsets. The server resolves citation metadata from retrieved passages instead
-  of accepting invented source names from a model.
-- **Bounded execution:** the graph permits at most one calculator call. Decimal
-  arithmetic uses constrained operands and source references, without executing
-  model-generated code.
-- **Persistent, isolated conversation context:** PostgreSQL stores completed turns
-  as structured snapshots. Follow-up rewriting uses at most three recent turns,
-  then retrieves fresh evidence; historical answers do not become source evidence.
-- **Atomic writes:** document reindexing is transactional. Conversation saves use
-  revision checks; conflicting concurrent writes return 409 rather than losing a turn.
-- **Explicit model preparation:** embedding downloads occur during setup. Requests
-  load a prepared cache, keeping download failures outside normal request handling.
-- **One application origin:** FastAPI serves packaged HTML/CSS/JavaScript and the
-  API. Provider credentials stay on the server; no frontend build server is needed.
-
-The [architecture guide](docs/architecture.md) details graph branches, persistence,
-provider contracts, and the boundaries of citation validation.
 
 ## API reference
 
