@@ -1,0 +1,28 @@
+# Use only with a separate project/database; never merge into the normal app stack.
+services:
+  llm-fixture:
+    profiles: [app]
+    image: agentic-rag-assistant:local
+    command: [python, /fixture.py]
+    volumes:
+      - ./tests/ollama_fixture.py:/fixture.py:ro
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, python, -c, "import socket; socket.create_connection(('127.0.0.1', 11434), timeout=2).close()"]
+      interval: 2s
+      timeout: 3s
+      retries: 5
+      start_period: 2s
+  api:
+    environment:
+      LLM_PROVIDER: ollama
+      LLM_MODEL: deterministic-fixture
+      OLLAMA_BASE_URL: http://llm-fixture:11434
+      HF_TOKEN: ""
+      OPENAI_API_KEY: ""
+    depends_on:
+      llm-fixture:
+        condition: service_healthy

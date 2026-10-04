@@ -11,6 +11,9 @@ __pycache__/
 # Downloaded local embedding model
 /.cache/embeddings/
 
+# Local Docker TLS trust bundles
+/.cache/certificates/
+
 # Local environment configuration
 .env
 .env.*

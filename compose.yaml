@@ -17,5 +17,70 @@ services:
       timeout: 5s
       retries: 10
 
+  # Targeting api activates the app profile; the default remains database-only.
+  db-init:
+    profiles: [app]
+    build: .
+    image: agentic-rag-assistant:local
+    command: [python, -m, agentic_rag_assistant.database]
+    environment:
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag_local_dev}@postgres:5432/${POSTGRES_DB:-agentic_rag}}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  model-prepare:
+    profiles: [app]
+    build: .
+    image: agentic-rag-assistant:local
+    command: [python, -m, agentic_rag_assistant.embeddings]
+    environment:
+      MODEL_CACHE_DIR: /app/.cache/embeddings
+    volumes:
+      - embedding-cache:/app/.cache/embeddings
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  api:
+    profiles: [app]
+    build: .
+    image: agentic-rag-assistant:local
+    init: true
+    environment:
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag_local_dev}@postgres:5432/${POSTGRES_DB:-agentic_rag}}
+      MODEL_CACHE_DIR: /app/.cache/embeddings
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-120}
+      LLM_MAX_OUTPUT_TOKENS: ${LLM_MAX_OUTPUT_TOKENS:-4096}
+      HF_TOKEN: ${HF_TOKEN:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OLLAMA_BASE_URL: ${DOCKER_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - embedding-cache:/app/.cache/embeddings:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
+      model-prepare:
+        condition: service_completed_successfully
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+
 volumes:
   postgres-data:
+  embedding-cache:

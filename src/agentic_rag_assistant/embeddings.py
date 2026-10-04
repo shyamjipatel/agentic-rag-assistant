@@ -103,6 +103,20 @@ class LocalEmbedder:
         return self._embed([QUERY_INSTRUCTION + query])[0]
 
 
+def prepare_model(cache_dir: Path) -> None:
+    """Verify a populated cache offline before attempting an explicit download."""
+    if cache_dir.is_dir() and any(cache_dir.iterdir()):
+        try:
+            LocalEmbedder(cache_dir).embed_query("Verify the local embedding model.")
+            return
+        except EmbeddingUnavailableError:
+            pass
+    from fastembed import TextEmbedding
+
+    TextEmbedding(model_name=EMBEDDING_MODEL, cache_dir=str(cache_dir), threads=2)
+    LocalEmbedder(cache_dir).embed_query("Verify the local embedding model.")
+
+
 if __name__ == "__main__":
     # This is an application entry point, not library import-time TLS mutation.
     import truststore
@@ -112,11 +126,13 @@ if __name__ == "__main__":
     # Users can opt back in by setting HF_HUB_DISABLE_XET=0 explicitly.
     os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
     os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
-    from fastembed import TextEmbedding
-
     from agentic_rag_assistant.settings import get_settings
 
-    cache_dir = get_settings().model_cache_dir
-    TextEmbedding(model_name=EMBEDDING_MODEL, cache_dir=str(cache_dir), threads=2)
-    LocalEmbedder(cache_dir).embed_query("Verify the local embedding model.")
+    try:
+        prepare_model(get_settings().model_cache_dir)
+    except Exception:
+        raise SystemExit(
+            "Model preparation failed. Check download connectivity, TLS trust, "
+            "and cache permissions; an existing prepared cache can be imported offline."
+        ) from None
     print(f"Local model prepared: {EMBEDDING_MODEL}, {EMBEDDING_DIMENSIONS} dimensions.")

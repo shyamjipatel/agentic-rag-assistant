@@ -15,6 +15,7 @@ from agentic_rag_assistant.embeddings import (
     EmbeddingUnavailableError,
     LocalEmbedder,
     validate_vector,
+    prepare_model,
 )
 
 
@@ -93,3 +94,36 @@ def test_loading_disables_native_telemetry_before_constructing_the_offline_model
     monkeypatch.setitem(sys.modules, "fastembed", SimpleNamespace(TextEmbedding=make_model))
     embedder = LocalEmbedder(Path("unused-test-cache"))
     assert len(embedder.embed_query("A question?")) == EMBEDDING_DIMENSIONS
+
+
+def test_prepared_cache_is_verified_without_any_download(monkeypatch, tmp_path):
+    (tmp_path / "model-marker").write_text("populated cache")
+    monkeypatch.setattr(LocalEmbedder, "embed_query", lambda self, text: [1.0] * 384)
+
+    def unexpected_download(**kwargs):
+        raise AssertionError("A prepared cache must stay offline")
+
+    monkeypatch.setitem(sys.modules, "fastembed", SimpleNamespace(TextEmbedding=unexpected_download))
+    prepare_model(tmp_path)
+
+
+@pytest.mark.parametrize("populated", [False, True])
+def test_missing_or_unusable_cache_triggers_explicit_model_preparation(
+    monkeypatch, tmp_path, populated,
+):
+    if populated:
+        (tmp_path / "model-marker").write_text("incomplete cache")
+    downloads = []
+
+    def verify(self, text):
+        if not downloads:
+            raise EmbeddingUnavailableError("Missing model")
+        return [1.0] * 384
+
+    monkeypatch.setattr(LocalEmbedder, "embed_query", verify)
+    monkeypatch.setitem(sys.modules, "fastembed", SimpleNamespace(
+        TextEmbedding=lambda **options: downloads.append(options),
+    ))
+    prepare_model(tmp_path)
+    assert len(downloads) == 1
+    assert downloads[0]["cache_dir"] == str(tmp_path)

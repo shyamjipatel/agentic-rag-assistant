@@ -1,0 +1,15 @@
+# Optional runtime TLS trust, without baking a workstation CA into the image.
+# TLS_CA_BUNDLE must point to a PEM bundle containing public and required private CAs.
+services:
+  model-prepare:
+    environment:
+      SSL_CERT_FILE: /run/secrets/tls-ca-bundle
+    secrets: [tls-ca-bundle]
+  api:
+    environment:
+      SSL_CERT_FILE: /run/secrets/tls-ca-bundle
+    secrets: [tls-ca-bundle]
+
+secrets:
+  tls-ca-bundle:
+    file: ${TLS_CA_BUNDLE:?Set TLS_CA_BUNDLE to an existing trusted PEM CA bundle}
