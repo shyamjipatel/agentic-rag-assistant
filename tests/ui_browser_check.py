@@ -105,7 +105,9 @@ def run():
     app.dependency_overrides[get_vector_store] = lambda: library
     app.dependency_overrides[get_retrieval_service] = lambda: retrieval
     app.dependency_overrides[get_answer_service] = lambda: RAGAgent(retrieval, Provider())
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=8791, log_level="error"))
+    server = uvicorn.Server(uvicorn.Config(
+        app, host="127.0.0.1", port=8791, log_level="error", access_log=False,
+    ))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
     for _ in range(100):
@@ -130,6 +132,8 @@ def run():
             page.goto("http://127.0.0.1:8791/")
             expect(page.locator("#connection-label")).to_have_text("Workspace connected")
             page.screenshot(path=str(screenshot_dir / "workspace-desktop.png"), full_page=True)
+            another = sessions.create()
+            sessions.rename(another.conversation_id, "Document review")
 
             # Both supported formats go through the actual upload/index HTTP endpoint.
             page.locator("#upload-trigger").click()
@@ -164,7 +168,16 @@ def run():
             page.locator("#send").click()
             expect(page.locator(".answer-text")).to_have_count(2)
             expect(page.locator(".tool-result")).to_contain_text("24 × 3 = 72")
+            expect(page.locator("#toast")).to_be_hidden(timeout=6000)
             page.screenshot(path=str(screenshot_dir / "workspace-chat.png"), full_page=True)
+            preview = browser.new_page(
+                viewport={"width": 390, "height": 960}, is_mobile=True,
+                has_touch=True, reduced_motion="reduce",
+            )
+            preview.goto(first_url)
+            expect(preview.locator(".answer-text")).to_have_count(2)
+            preview.screenshot(path=str(screenshot_dir / "workspace-mobile.png"), full_page=True)
+            preview.close()
 
             # New sessions have their own transcript; refresh restores PostgreSQL history.
             page.locator("#new-chat").click()
@@ -243,7 +256,6 @@ def run():
             mobile.goto(first_url)
             expect(mobile.locator(".answer-text")).to_have_count(20)
             assert mobile.evaluate("document.documentElement.scrollWidth <= innerWidth")
-            mobile.screenshot(path=str(screenshot_dir / "workspace-mobile.png"), full_page=True)
             mobile.locator("#sidebar-toggle").click()
             mobile.get_by_role("button", name="Source review", exact=True).click()
             expect(mobile.locator("#chat-title")).to_have_text("Source review")
