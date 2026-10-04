@@ -47,6 +47,11 @@ Authentication and per-user access controls are extension points for deployment.
 
 ## Architecture
 
+![Architecture showing document indexing, the LangGraph answer workflow, pluggable LLM providers, and PostgreSQL persistence](docs/images/architecture.png)
+
+<details>
+<summary>View the editable Mermaid diagram</summary>
+
 ```mermaid
 flowchart TB
     UI[Browser workspace] --> API[FastAPI]
@@ -74,6 +79,8 @@ flowchart TB
     SAVE --> RESPONSE[Answer + citations + tool results]
     RESPONSE --> UI
 ```
+
+</details>
 
 ### Design decisions
 
